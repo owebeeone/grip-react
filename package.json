@@ -38,5 +38,9 @@
         "require": "./dist/index.cjs"
       }
     ]
+  ],
+  "files": [
+    "dist",
+    "README.md"
   ]
 }
