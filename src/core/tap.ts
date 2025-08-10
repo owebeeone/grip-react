@@ -17,3 +17,9 @@ export interface Tap {
   // Produce a Drip for the Grip within this ctx (may query grok for params)
   produce<T>(grip: Grip<T>, ctx: GripContext, grok: Grok): Drip<T>;
 }
+
+// Optional helper interface for producers that can be activated/deactivated
+export interface ActivatableProducer {
+  activate?(requestedGrips?: ReadonlySet<Grip<any>>): void;
+  deactivate?(): void;
+}

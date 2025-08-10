@@ -2,27 +2,12 @@ import { Grip } from "./grip";
 import { GripContext } from "./context";
 import { Drip } from "./drip";
 import { Tap } from "./tap";
-
-type ProducerType = "tap" | "override-value" | "override-drip";
-
-interface ProducerRecord {
-  type: ProducerType;
-  gripKey: string;
-  tapId?: string;
-  drip?: Drip<any>;
-  value?: unknown;
-}
-
-interface ContextNode {
-  ctx: GripContext;
-  producers: Map<string, ProducerRecord[]>; // by grip.key
-  consumers: Map<string, Set<Drip<any>>>;   // by grip.key
-}
+import { GrokGraph, GripContextNode } from "./graph";
 
 export class Grok {
   private taps: Tap[] = [];
   private cache = new Map<string, Drip<any>>();
-  private graph = new Map<string, ContextNode>();
+  private graph = new GrokGraph();
 
   readonly rootContext: GripContext;
   readonly mainContext: GripContext;
@@ -30,37 +15,12 @@ export class Grok {
   constructor() {
     this.rootContext = new GripContext("root");
     this.mainContext = new GripContext("main").addParent(this.rootContext, 0);
-    this.ensureContextNode(this.rootContext);
-    this.ensureContextNode(this.mainContext);
+    this.graph.ensureNode(this.rootContext);
+    this.graph.ensureNode(this.mainContext);
   }
 
-  private ensureContextNode(ctx: GripContext): ContextNode {
-    let node = this.graph.get(ctx.id);
-    if (!node) {
-      node = { ctx, producers: new Map(), consumers: new Map() };
-      this.graph.set(ctx.id, node);
-    }
-    return node;
-  }
-
-  private recordConsumer(ctx: GripContext, gripKey: string, drip: Drip<any>): void {
-    const node = this.ensureContextNode(ctx);
-    const set = node.consumers.get(gripKey) ?? new Set<Drip<any>>();
-    set.add(drip);
-    node.consumers.set(gripKey, set);
-    // Also track on context for local bookkeeping
-    // We need the Grip object to call context.addConsumerDrip; here we only have key, so skip.
-  }
-
-  private recordProducer(ctx: GripContext, rec: ProducerRecord): void {
-    const node = this.ensureContextNode(ctx);
-    const arr = node.producers.get(rec.gripKey) ?? [];
-    // Avoid duplicate identical producer entries (by type+tapId+drip/value)
-    const exists = arr.some(p => p.type === rec.type && p.tapId === rec.tapId && p.drip === rec.drip && p.value === rec.value);
-    if (!exists) {
-      arr.push(rec);
-      node.producers.set(rec.gripKey, arr);
-    }
+  private ensureNode(ctx: GripContext): GripContextNode {
+    return this.graph.ensureNode(ctx);
   }
 
   registerTap(tap: Tap): void {
@@ -70,7 +30,7 @@ export class Grok {
   // Central query API: component asks for a Grip from a Context => gets a Drip<T>
   query<T>(grip: Grip<T>, ctx: GripContext): Drip<T> {
     // Ensure nodes for ctx and all parents encountered
-    this.ensureContextNode(ctx);
+    this.ensureNode(ctx);
 
     // 1) Context overrides take precedence (track source context)
     const ovSrc = ctx.resolveOverrideWithSource(grip);
@@ -78,14 +38,14 @@ export class Grok {
       const { override, source } = ovSrc;
       if (override.type === "drip") {
         const drip = override.drip as Drip<T>;
-        this.recordProducer(source, { type: "override-drip", gripKey: grip.key, drip });
-        this.recordConsumer(ctx, grip.key, drip);
+        this.ensureNode(source).recordProducer(grip, { type: "override-drip", drip });
+        this.ensureNode(ctx).recordConsumer(grip, drip);
         return drip;
       }
       if (override.type === "value") {
         const drip = new Drip<T>(override.value as T);
-        this.recordProducer(source, { type: "override-value", gripKey: grip.key, value: override.value });
-        this.recordConsumer(ctx, grip.key, drip);
+        this.ensureNode(source).recordProducer(grip, { type: "override-value", value: override.value });
+        this.ensureNode(ctx).recordConsumer(grip, drip);
         return drip;
       }
     }
@@ -104,24 +64,24 @@ export class Grok {
       const k = `${bestTap.id}::${grip.key}::${ctx.id}`;
       const cached = this.cache.get(k);
       if (cached) {
-        this.recordProducer(ctx, { type: "tap", gripKey: grip.key, tapId: bestTap.id, drip: cached });
-        this.recordConsumer(ctx, grip.key, cached);
+        this.ensureNode(ctx).recordProducer(grip, { type: "tap", tapId: bestTap.id, drip: cached });
+        this.ensureNode(ctx).recordConsumer(grip, cached);
         return cached as Drip<T>;
       }
       const drip = bestTap.produce<T>(grip, ctx, this);
       this.cache.set(k, drip);
-      this.recordProducer(ctx, { type: "tap", gripKey: grip.key, tapId: bestTap.id, drip });
-      this.recordConsumer(ctx, grip.key, drip);
+      this.ensureNode(ctx).recordProducer(grip, { type: "tap", tapId: bestTap.id, drip });
+      this.ensureNode(ctx).recordConsumer(grip, drip);
       return drip;
     }
 
     const fallback = new Drip<T>(grip.defaultValue as T);
-    this.recordConsumer(ctx, grip.key, fallback);
+    this.ensureNode(ctx).recordConsumer(grip, fallback);
     return fallback;
   }
 
   // Expose read-only snapshot of the graph for debugging/inspection
-  getGraph(): ReadonlyMap<string, Readonly<ContextNode>> {
-    return this.graph;
+  getGraph(): ReadonlyMap<string, GripContextNode> {
+    return this.graph.snapshot();
   }
 }
