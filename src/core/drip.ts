@@ -25,7 +25,14 @@ export class Drip<T> {
     if (wasEmpty && this.subs.size === 1) {
       this.firstSubCallbacks.forEach(cb => cb());
     }
-    return () => this.subs.delete(fn);
+    return () => {
+      if (this.subs.has(fn)) {
+        this.subs.delete(fn);
+        if (this.subs.size === 0) {
+          this.zeroSubCallbacks.forEach(cb => cb());
+        }
+      }
+    };
   }
 
   onFirstSubscriber(fn: () => void): void {

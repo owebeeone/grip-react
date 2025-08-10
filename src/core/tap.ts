@@ -23,3 +23,8 @@ export interface ActivatableProducer {
   activate?(requestedGrips?: ReadonlySet<Grip<any>>): void;
   deactivate?(): void;
 }
+
+// Optional: richer Tap variant that can return a controller object alongside the drip
+export interface TapWithController<TDrip = any, TController = any> extends Tap {
+  produceWithController?<T>(grip: Grip<T>, ctx: GripContext, grok: Grok): { drip: Drip<T>; controller: TController };
+}

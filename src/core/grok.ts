@@ -23,6 +23,24 @@ export class Grok {
     return this.graph.ensureNode(ctx);
   }
 
+  // Create a new context optionally parented to a given context (defaults to main)
+  createContext(id?: string, parent?: GripContext, priority = 0): GripContext {
+    const ctx = new GripContext(id);
+    if (parent ?? this.mainContext) ctx.addParent(parent ?? this.mainContext, priority);
+    this.ensureNode(ctx);
+    return ctx;
+  }
+
+  // Dispose a context: clears caches keyed by this ctx and lets the graph GC remove the node
+  disposeContext(ctx: GripContext): void {
+    // Clear cache entries for this ctx
+    for (const key of Array.from(this.cache.keys())) {
+      if (key.endsWith(`::${ctx.id}`)) this.cache.delete(key);
+    }
+    // Optionally: detach from parents to break strong references in contexts
+    // There is no public API on GripContext to remove parents; we rely on graph WeakRef GC.
+  }
+
   registerTap(tap: Tap): void {
     this.taps.push(tap);
   }
