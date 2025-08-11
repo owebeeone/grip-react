@@ -70,15 +70,12 @@ export class Grok {
 
     // 2) Find best-matching Tap
     let bestTap: Tap | undefined;
-    let bestScore = -Infinity;
     for (const tap of this.taps) {
-      if (!tap.provides.some(g => g.key === grip.key)) continue;
-      const score = tap.match(ctx);
-      if (score > bestScore) { bestScore = score; bestTap = tap; }
+      if (tap.provides.some(g => g.key === grip.key)) { bestTap = tap; break; }
     }
 
     // 3) Produce or fallback to default
-    if (bestTap && bestScore > -Infinity) {
+    if (bestTap) {
       const k = `${bestTap.id}::${grip.key}::${ctx.id}`;
       const cached = this.cache.get(k);
       if (cached) {
@@ -88,6 +85,21 @@ export class Grok {
       }
       const drip = bestTap.produce<T>(grip, ctx, this);
       this.cache.set(k, drip);
+      // Subscribe to parameter grip override changes on this context to invalidate cache (guarded)
+      const unsubscribeFns: Array<() => void> = [];
+      const invalidate = () => {
+        this.cache.delete(k);
+        unsubscribeFns.forEach(fn => fn());
+      };
+      const hasOnOC = typeof (ctx as any).onOverrideChange === 'function';
+      if (hasOnOC) {
+        unsubscribeFns.push((ctx as any).onOverrideChange(grip, invalidate));
+        if (bestTap.parameterGrips) {
+          for (const pg of bestTap.parameterGrips) {
+            unsubscribeFns.push((ctx as any).onOverrideChange(pg, invalidate));
+          }
+        }
+      }
       this.ensureNode(ctx).recordProducer(grip, { type: "tap", tapId: bestTap.id, drip });
       this.ensureNode(ctx).recordConsumer(grip, drip);
       return drip;

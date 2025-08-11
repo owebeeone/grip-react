@@ -10,10 +10,8 @@ import type { Grok } from "./grok";
 export interface Tap {
   id: string;
   provides: readonly Grip<any>[];
-
-  // Higher is better; -Infinity means cannot provide in this ctx
-  match(ctx: GripContext): number;
-
+  // Optional: declare parameter grips used by this tap
+  parameterGrips?: readonly Grip<any>[];
   // Produce a Drip for the Grip within this ctx (may query grok for params)
   produce<T>(grip: Grip<T>, ctx: GripContext, grok: Grok): Drip<T>;
 }

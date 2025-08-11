@@ -10,6 +10,7 @@ export class GripContext {
   private overrides = new Map<string, Override>();
   private producerDrips = new Map<string, Set<Drip<any>>>();
   private consumerDrips = new Map<string, Set<Drip<any>>>();
+  private overrideListeners?: Map<string, Set<() => void>>;
   readonly id: string;
 
   constructor(id?: string) {
@@ -38,11 +39,13 @@ export class GripContext {
 
   setValue<T>(grip: Grip<T>, value: T): this {
     this.overrides.set(grip.key, { type: "value", value });
+    this.notifyOverrideChange(grip.key);
     return this;
   }
 
   setDrip<T>(grip: Grip<T>, drip: Drip<T>): this {
     this.overrides.set(grip.key, { type: "drip", drip });
+    this.notifyOverrideChange(grip.key);
     return this;
   }
 
@@ -99,5 +102,25 @@ export class GripContext {
   getConsumerDrips(grip?: Grip<any>): ReadonlyMap<string, ReadonlySet<Drip<any>>> | ReadonlySet<Drip<any>> | undefined {
     if (!grip) return this.consumerDrips as unknown as ReadonlyMap<string, ReadonlySet<Drip<any>>>;
     return this.consumerDrips.get(grip.key);
+  }
+
+  // Subscribe to local override changes for a specific grip
+  onOverrideChange<T>(grip: Grip<T>, fn: () => void): () => void {
+    const key = grip.key;
+    if (!this.overrideListeners) this.overrideListeners = new Map();
+    const existing = this.overrideListeners.get(key) ?? new Set<() => void>();
+    existing.add(fn);
+    this.overrideListeners.set(key, existing);
+    return () => {
+      const s = this.overrideListeners?.get(key);
+      if (!s) return;
+      s.delete(fn);
+      if (s.size === 0) this.overrideListeners?.delete(key);
+    };
+  }
+
+  private notifyOverrideChange(key: string): void {
+    const set = this.overrideListeners?.get(key);
+    if (set) set.forEach(cb => cb());
   }
 }
