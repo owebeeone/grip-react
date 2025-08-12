@@ -13,7 +13,7 @@ describe('Engine shared drip semantics', () => {
     const defineGrip = GripOf(registry);
     const VALUE = defineGrip<number>('Value', 0);
     const grok = new Grok();
-    const ctx = new GripContext('tctx');
+    const ctx = grok.createContext('tctx');
     const tap: Tap = {
       id: 'const',
       provides: [VALUE],
@@ -52,7 +52,7 @@ describe('Engine parameter-driven updates', () => {
     const PARAM = defineGrip<string>('Param', 'A');
     const OUT = defineGrip<number>('Out', 0);
     const grok = new Grok();
-    const ctx = new GripContext('pctx');
+    const ctx = grok.createContext('pctx');
     // Tap depends on PARAM
     const tap: Tap = {
       id: 'paramTap',
@@ -60,17 +60,23 @@ describe('Engine parameter-driven updates', () => {
       parameterGrips: [PARAM],
       produce: (_g, c) => {
         const ov = c.resolveOverride(PARAM);
-        const p = ov?.type === 'value' ? (ov.value as string) : 'A';
+        let p = 'A';
+        if (ov?.type === 'drip') {
+          p = (ov.drip as Drip<string>).get();
+        } else if (ov?.type === 'value') {
+          p = ov.value as string;
+        }
         return new Drip<number>(p === 'A' ? 1 : 2) as unknown as Drip<any>;
       },
     };
     grok.registerTap(tap);
-    // Initial
-    ctx.setValue(PARAM, 'A');
+    // Use parameter drip per unified approach
+    const paramDrip = new Drip<string>('A');
+    ctx.setDrip(PARAM, paramDrip);
     const d1 = grok.query(OUT, ctx);
     expect(d1.get()).toBe(1);
     // Change param; next query should yield a new drip reflecting new param
-    ctx.setValue(PARAM, 'B');
+    paramDrip.next('B');
     const d2 = grok.query(OUT, ctx);
     expect(d2).not.toBe(d1);
     expect(d2.get()).toBe(2);
@@ -78,8 +84,96 @@ describe('Engine parameter-driven updates', () => {
 });
 
 describe('Engine add/remove live taps', () => {
-  it.todo('registering at ancestor connects descendants where applicable');
-  it.todo('unregistering disconnects and re-resolves to next provider');
+  it('registering at ancestor connects descendants where applicable', () => {
+    const registry = new GripRegistry();
+    const defineGrip = GripOf(registry);
+    const OUT = defineGrip<number>('Out', 0);
+    const grok = new Grok();
+    const A = grok.createContext('A');
+    const B = grok.createContext('B', A);
+
+    // Initially, no tap: descendant resolves to default
+    const d0 = grok.query(OUT, B);
+    expect(d0.get()).toBe(0);
+
+    // Register a tap (global registration acts as ancestor availability)
+    const tap: Tap = {
+      id: 'T1',
+      provides: [OUT],
+      produce: () => new Drip<number>(123) as unknown as Drip<any>,
+    };
+    grok.registerTap(tap);
+
+    // Descendant now resolves to the tap-produced value
+    const d1 = grok.query(OUT, B);
+    expect(d1.get()).toBe(123);
+
+    // A closer provider (override at B) overshadows the tap
+    B.setValue(OUT, 7);
+    const d2 = grok.query(OUT, B);
+    expect(d2.get()).toBe(7);
+
+    // Ancestor without override still sees the tap value
+    const dA = grok.query(OUT, A);
+    expect(dA.get()).toBe(123);
+  });
+  
+  it('unregistering disconnects and re-resolves to next provider', () => {
+    const registry = new GripRegistry();
+    const defineGrip = GripOf(registry);
+    const OUT = defineGrip<number>('Out', 0);
+    const grok = new Grok();
+    const A = grok.createContext('A');
+    const B = grok.createContext('B', A);
+
+    const tap1: Tap = {
+      id: 'T1',
+      provides: [OUT],
+      produce: () => new Drip<number>(111) as unknown as Drip<any>,
+    };
+    const tap2: Tap = {
+      id: 'T2',
+      provides: [OUT],
+      produce: () => new Drip<number>(222) as unknown as Drip<any>,
+    };
+
+    // Register both; current engine picks first match added (T1)
+    grok.registerTap(tap1);
+    grok.registerTap(tap2);
+    const d1 = grok.query(OUT, B);
+    expect(d1.get()).toBe(111);
+
+    // Unregister T1: should evict its cache entries and next query resolves to T2
+    grok.unregisterTap('T1');
+    const d2 = grok.query(OUT, B);
+    expect(d2.get()).toBe(222);
+
+    // Remove T2 as well: falls back to default
+    grok.unregisterTap('T2');
+    const d3 = grok.query(OUT, B);
+    expect(d3.get()).toBe(0);
+  });
+
+  it('proximity-based selection ignores registration order', () => {
+    const registry = new GripRegistry();
+    const defineGrip = GripOf(registry);
+    const OUT = defineGrip<number>('Out', 0);
+    const grok = new Grok();
+    const A = grok.createContext('A');
+    const B = grok.createContext('B', A);
+
+    // Two taps with same grip; we will register at different contexts
+    const tapRoot: Tap = { id: 'rootTap', provides: [OUT], produce: () => new Drip<number>(1) as unknown as Drip<any> };
+    const tapA: Tap = { id: 'aTap', provides: [OUT], produce: () => new Drip<number>(2) as unknown as Drip<any> };
+
+    // Register rootTap at main (ancestor of A/B), and aTap at A later
+    grok.registerTap(tapRoot);
+    grok.registerTapAt(A, tapA);
+
+    // B should resolve to aTap (closer), regardless of registration order
+    const d = grok.query(OUT, B);
+    expect(d.get()).toBe(2);
+  });
 });
 
 

@@ -31,6 +31,13 @@ export class SimpleResolver {
     this.localProviders.set(ctx, set);
   }
 
+  unregisterLocalProvider(ctx: ContextId, grip: GripKey): void {
+    const set = this.localProviders.get(ctx);
+    if (!set) return;
+    set.delete(grip);
+    if (set.size === 0) this.localProviders.delete(ctx);
+  }
+
   hasLocalProvider(ctx: ContextId, grip: GripKey): boolean {
     return this.localProviders.get(ctx)?.has(grip) ?? false;
   }
