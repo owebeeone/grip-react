@@ -2,18 +2,38 @@ import { Grip } from "./grip";
 import { GripContext } from "./context";
 import { Drip } from "./drip";
 import type { Grok } from "./grok";
+import type { GripContextLike } from "./containers";
 
 // A Tap advertises it can provide one or more Grips.
 // match(ctx) returns a score; <= -Infinity means "no".
 // produce() returns a Drip for the requested Grip.
 // (MVP: single-output path; multi-output & feeders can come next.)
 export interface Tap {
-  id: string;
   provides: readonly Grip<any>[];
-  // Optional: declare parameter grips used by this tap
-  parameterGrips?: readonly Grip<any>[];
-  // Produce a Drip for the Grip within this ctx (may query grok for params)
-  produce<T>(grip: Grip<T>, ctx: GripContext, grok: Grok): Drip<T>;
+  // Parameters read from the destination context lineage (affect a single destination)
+  destinationParamGrips?: readonly Grip<any>[];
+  // Parameters read from the home (provider) context lineage (affect all destinations under the provider)
+  homeParamGrips?: readonly Grip<any>[];
+
+  // Lifecycle: engine informs tap when attached/detached at a home context
+  // Grok is implicit; contexts must belong to the same engine (enforced by the engine)
+  onAttach?(home: GripContext | GripContextLike): void;
+  onDetach?(): void;
+
+  // Lifecycle: engine informs tap when a destination context connects/disconnects to a provided grip
+  // Tap can derive grok via its stored home, so no grok parameter is needed
+  onConnect?(dest: GripContext, grip: Grip<any>): void;
+  onDisconnect?(dest: GripContext, grip: Grip<any>): void;
+
+  // Produce for the current state. If destContext is provided, then only
+  // provide the updates for the destination context provided.
+  produce(opts?: {destContext?: GripContext}): void;
+
+  // A grip on an input parameter has changed.
+  produceOnParams?(paramGrip: Grip<any>): void;
+
+  // A grip on a destination parameter has changed.
+  produceOnDestParams?(destContext: GripContext | undefined, paramGrip: Grip<any>): void;
 }
 
 // Optional helper interface for producers that can be activated/deactivated

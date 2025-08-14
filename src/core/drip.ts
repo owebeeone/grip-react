@@ -1,45 +1,108 @@
+import type { GripContext } from "./context";
+
 export type Unsubscribe = () => void;
 
+/**
+ * A Drip is a value that can be subscribed to.
+ * 
+ * This is used by data consumers to get the latest value of a data source.
+ * 
+ * This is what is returned by the useGrip hook in react.
+ */
 export class Drip<T> {
-  private value: T;
-  private subs = new Set<(v: T) => void>();
+  readonly context: GripContext; // Drips keep context alive.
+  private value: T | undefined;
+  private subs = new Set<(v: T | undefined) => void>();
+  // TODO: Switch to using a higher priority task instead of immediate subscribers.
+  private immediateSubs = new Set<(v: T | undefined) => void>();
   private firstSubCallbacks = new Set<() => void>();
   private zeroSubCallbacks = new Set<() => void>();
+  private enqueued = false;
 
-  constructor(initial: T) {
+  constructor(context: GripContext, initial: T) {
+    this.context = context;
     this.value = initial;
   }
 
-  get(): T {
+  get(): T | undefined {
     return this.value;
   }
 
-  next(v: T): void {
-    this.value = v;
-    this.subs.forEach(fn => fn(v));
+  /**
+   * Set the value of the drip.
+   *
+   * If the new value is the same as the current value, subscribers are not notified.
+   * 
+   * This will enqueue a task to notify non immediate subscribers.
+   * It will also notify immediate subscribers directly.
+   */
+  next(v: T | undefined): void {
+    if (this.value !== v) {
+      this.value = v;
+      this.enqueueNotifySubscribers();
+    }
   }
 
-  subscribe(fn: (v: T) => void): Unsubscribe {
-    const wasEmpty = this.subs.size === 0;
-    this.subs.add(fn);
-    if (wasEmpty && this.subs.size === 1) {
+  /**
+   * Enqueue a task to notify subscribers.
+   * 
+   * This will notify immediate subscribers directly.
+   * It will also enqueue a task to notify non immediate subscribers.
+   */
+  enqueueNotifySubscribers(): void {
+    this.notifyImmediateSubscribers();
+    if (!this.enqueued) {
+      this.enqueued = true;
+      this.context.submitWeakTask(this.taskQueueCallback);
+    }
+  }
+
+  private taskQueueCallback(): void {
+    this.enqueued = false;
+    this.notifySubscribers();
+  }
+
+  notifySubscribers(): void {
+    this.subs.forEach(fn => fn(this.value));
+  }
+  
+  notifyImmediateSubscribers(): void {
+    this.immediateSubs.forEach(fn => fn(this.value));
+  }
+
+  hasSubscribers(): boolean {
+    return this.subs.size > 0 || this.immediateSubs.size > 0;
+  }
+
+  subscribeWith(queue: Set<(v: T | undefined) => void>, fn: (v: T | undefined) => void): Unsubscribe {
+    const wasEmpty = ! this.hasSubscribers();
+    queue.add(fn);
+    if (wasEmpty) {
       this.firstSubCallbacks.forEach(cb => cb());
     }
     return () => {
-      if (this.subs.has(fn)) {
-        this.subs.delete(fn);
-        if (this.subs.size === 0) {
+      if (queue.has(fn)) {
+        queue.delete(fn);
+        if (!this.hasSubscribers()) {
           this.zeroSubCallbacks.forEach(cb => cb());
         }
       }
     };
   }
 
-  onFirstSubscriber(fn: () => void): void {
+  subscribe(fn: (v: T | undefined) => void): Unsubscribe {
+    return this.subscribeWith(this.subs, fn);
+  }
+
+  subscribePriority(fn: (v: T | undefined) => void): Unsubscribe {
+    return this.subscribeWith(this.immediateSubs, fn);
+  }
+
+  addOnFirstSubscriber(fn: () => void): void {
     this.firstSubCallbacks.add(fn);
   }
 
-  onZeroSubscribers(fn: () => void): void {
+  addOnZeroSubscribers(fn: () => void): void {
     this.zeroSubCallbacks.add(fn);
   }
 

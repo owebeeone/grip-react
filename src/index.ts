@@ -3,5 +3,8 @@ export * from "./core/context";
 export * from "./core/drip";
 export * from "./core/tap";
 export * from "./core/grok";
+export * from "./core/containers";
+export * from "./core/simple_tap";
+export * from "./core/base_tap";
 export * from "./react/provider";
 export * from "./react/hooks";

@@ -1,19 +1,43 @@
 import { Grip } from "./grip";
 import { Drip } from "./drip";
+import type { Tap } from "./tap";
+import { GripContextNode } from "./graph";
+import { Grok } from "./grok";
+import { TaskHandleHolder } from "./task_queue";
 
 // A context can inherit from multiple parents with priorities.
 // It can hold overrides as either values OR Drips (dynamic params).
 type Override = { type: "value"; value: unknown } | { type: "drip"; drip: Drip<any> };
 
 export class GripContext {
+  private grok: Grok;
+  // Keep hard references to parents.
   private parents: Array<{ ctx: GripContext; priority: number }> = [];
-  private overrides = new Map<string, Override>();
-  private producerDrips = new Map<string, Set<Drip<any>>>();
-  private consumerDrips = new Map<string, Set<Drip<any>>>();
+  private contextNode: GripContextNode;
   readonly id: string;
+  private handleHolder = new TaskHandleHolder();
 
-  constructor(id?: string) {
+  constructor(engine: Grok, id?: string) {
+    this.grok = engine;
     this.id = id ?? `ctx_${Math.random().toString(36).slice(2)}`;
+    this.contextNode = engine.ensureNode(this);
+  }
+
+  getGrok(): Grok {
+    return this.grok;
+  }
+
+  isRoot(): boolean {
+    // Root is the context that has no parents.
+    return this.parents.length === 0;
+  }
+
+  submitTask(callback: () => void, priority = 0): void {
+    this.contextNode.submitTask(callback, priority);
+  }
+  
+  submitWeakTask(taskQueueCallback: () => void) {
+    this.contextNode.submitWeakTask(taskQueueCallback);
   }
 
   // Expose a shallow copy of parents (for graph building / debug)
@@ -22,11 +46,19 @@ export class GripContext {
   }
 
   addParent(parent: GripContext, priority = 0): this {
+    if (parent.contextNode.grok !== this.grok) throw new Error("Contexts must be attached to the same engine");
     if (parent === this) throw new Error("Context cannot be its own parent");
-    // Simple cycle guard:
-    if (parent.hasAncestor(this)) throw new Error("Cycle detected in context DAG");
-    this.parents.push({ ctx: parent, priority });
+
+    const parent_ref = { ctx: parent, priority };
+    this.parents.push(parent_ref);
     this.parents.sort((a, b) => b.priority - a.priority);
+
+    if (this.grok.hasCycle(this.contextNode)) {
+      // Remmove the node we just added so bad things don't happen if we continue.
+      this.parents = this.parents.filter(p => p !== parent_ref);
+      throw new Error("Cycle detected in context DAG");
+    }
+
     return this;
   }
 
@@ -36,69 +68,49 @@ export class GripContext {
     );
   }
 
-  setValue<T>(grip: Grip<T>, value: T): this {
-    this.overrides.set(grip.key, { type: "value", value });
-    return this;
-  }
-
-  setDrip<T>(grip: Grip<T>, drip: Drip<T>): this {
-    this.overrides.set(grip.key, { type: "drip", drip });
-    return this;
-  }
+  // Direct overrides are deprecated in taps-only design
+  setValue<T>(_grip: Grip<T>, _value: T): this { return this; }
+  setDrip<T>(_grip: Grip<T>, _drip: Drip<T>): this { return this; }
 
   // Resolve a parameter (value or drip) following priority across parents
-  resolveOverride<T>(grip: Grip<T>): Override | undefined {
-    const o = this.overrides.get(grip.key);
-    if (o) return o as Override;
-    for (const { ctx } of this.parents) {
-      const found = ctx.resolveOverride(grip);
-      if (found) return found as Override;
-    }
-    return undefined;
+  resolveOverride<T>(_grip: Grip<T>): Override | undefined { return undefined; }
+  resolveOverrideWithSource<T>(_grip: Grip<T>): { override: Override; source: GripContext } | undefined { return undefined; }
+
+	// Create a child context
+	createChild(id?: string): GripContext {
+		const child = new GripContext(id).addParent(this, 0);
+		// Link new child to the same engine as parent (for tap lifecycle & publishing)
+		(child as any).__grok = (this as any).__grok;
+		return child;
+	}
+
+  getLiveDripForGrip<T>(grip: Grip<T>): Drip<T> | undefined {
+    return this.contextNode.getLiveDripForGrip(grip);
   }
 
-  // Like resolveOverride, but also returns the context that supplied it
-  resolveOverrideWithSource<T>(grip: Grip<T>): { override: Override; source: GripContext } | undefined {
-    const o = this.overrides.get(grip.key);
-    if (o) return { override: o as Override, source: this };
-    for (const { ctx } of this.parents) {
-      const found = ctx.resolveOverrideWithSource(grip);
-      if (found) return found as { override: Override; source: GripContext };
-    }
-    return undefined;
+  getOrCreateConsumer<T>(grip: Grip<T>): Drip<T> {
+    return this.contextNode.getOrCreateConsumer(grip);
   }
 
-  // Create a child context with optional initial overrides
-  createChild(id?: string, init?: Array<{ grip: Grip<any>, value?: any, drip?: Drip<any> }>): GripContext {
-    const child = new GripContext(id).addParent(this, 0);
-    init?.forEach(({ grip, value, drip }) => {
-      if (drip) child.setDrip(grip as any, drip);
-      else child.setValue(grip as any, value);
-    });
-    return child;
+	// --- App-facing helpers to manage taps without referencing the engine ---
+	registerTap(tap: Tap): void {
+		const grok = (this as any).__grokRef?.deref?.() ?? (this as any).__grok;
+		if (!grok) throw new Error("Context is not attached to an engine");
+		grok.registerTapAt(this, tap);
+	}
+
+	unregisterTap(tap: Tap): void {
+		const grok = (this as any).__grokRef?.deref?.() ?? (this as any).__grok;
+		if (!grok) return;
+		grok.unregisterTap(tap);
+	}
+
+  unregisterSource(grip: Grip<any>): void {
+    const node = this.contextNode;
+    node.unregisterSource(grip);
   }
 
-  // --- Producer/Consumer child management (drips) ---
-  addProducerDrip<T>(grip: Grip<T>, drip: Drip<T>): void {
-    const set = this.producerDrips.get(grip.key) ?? new Set<Drip<any>>();
-    set.add(drip as unknown as Drip<any>);
-    this.producerDrips.set(grip.key, set);
+  _getContextNode() {
+    return this.contextNode;
   }
-
-  addConsumerDrip<T>(grip: Grip<T>, drip: Drip<T>): void {
-    const set = this.consumerDrips.get(grip.key) ?? new Set<Drip<any>>();
-    set.add(drip as unknown as Drip<any>);
-    this.consumerDrips.set(grip.key, set);
-  }
-
-  getProducerDrips(grip?: Grip<any>): ReadonlyMap<string, ReadonlySet<Drip<any>>> | ReadonlySet<Drip<any>> | undefined {
-    if (!grip) return this.producerDrips as unknown as ReadonlyMap<string, ReadonlySet<Drip<any>>>;
-    return this.producerDrips.get(grip.key);
-  }
-
-  getConsumerDrips(grip?: Grip<any>): ReadonlyMap<string, ReadonlySet<Drip<any>>> | ReadonlySet<Drip<any>> | undefined {
-    if (!grip) return this.consumerDrips as unknown as ReadonlyMap<string, ReadonlySet<Drip<any>>>;
-    return this.consumerDrips.get(grip.key);
-  }
-
 }
