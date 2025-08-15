@@ -20,6 +20,10 @@ export interface Tap {
   onAttach?(home: GripContext | GripContextLike): void;
   onDetach?(): void;
 
+  getHomeContext(): GripContext | undefined;
+
+  getParamsContext(): GripContext | undefined;
+
   // Lifecycle: engine informs tap when a destination context connects/disconnects to a provided grip
   // Tap can derive grok via its stored home, so no grok parameter is needed
   onConnect?(dest: GripContext, grip: Grip<any>): void;

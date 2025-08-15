@@ -39,10 +39,6 @@ function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
 export class Grok {
   private graph = new GrokGraph(this);
   private resolver = new SimpleResolver();
-  // Context -> taps registered at that context
-  private providersByContext = new Map<string, Set<Tap>>();
-  // Tap instance -> set of context ids where it's registered
-  private tapToContexts = new Map<Tap, Set<string>>();
 
   private taskQueue = new TaskQueue({ autoFlush: false, useMicrotask: false });
 
@@ -118,34 +114,13 @@ export class Grok {
   registerTapAt(ctx: GripContext | GripContextLike, tap: Tap): void {
     const homeCtx = (ctx && (ctx as any).getGripHomeContext) ? (ctx as GripContextLike).getGripHomeContext() : (ctx as GripContext);
 
-    // Index by context
-    const set = this.providersByContext.get(homeCtx.id) ?? new Set<Tap>();
-    set.add(tap);
-    this.providersByContext.set(homeCtx.id, set);
-    // Index by tap id
-    const ctxSet = this.tapToContexts.get(tap) ?? new Set<string>();
-    ctxSet.add(homeCtx.id);
-    this.tapToContexts.set(tap, ctxSet);
-    // // Ensure producer record at home node and record per provided grip
-    // const homeNode = this.graph.ensureNode(homeCtx);
-    // const rec = homeNode.getOrCreateProducerRecord(tap, tap.provides);
-    // for (const g of tap.provides) {
-    //   homeNode.recordProducer(g, rec);
-    // }
-    
-    // Inform resolver for each provided grip
-    for (const g of tap.provides) {
-      this.resolver.registerLocalProvider(homeCtx.id, g.key);
-    }
-    this.resolver.propagateAdd(homeCtx.id, new Set(tap.provides.map(g => g.key)));
-    // Notify tap
     tap.onAttach!(homeCtx);
   }
 
   unregisterTap(tap: Tap): void {
-    const contexts = Array.from(this.tapToContexts.get(tap) ?? []);
+    const context = tap.getHomeContext();
     // Remove from indices and resolver
-    for (const ctxId of contexts) {
+    if (context) {
       const providers = this.providersByContext.get(ctxId);
       if (providers) {
         providers.delete(tap);
@@ -168,8 +143,7 @@ export class Grok {
           homeNode.producerByTap.delete(tap);
         }
       }
-      // Notify tap(s)
-      for (const tap of removed) tap.onDetach?.();
+
     }
     this.tapToContexts.delete(tap);
     // this.tapDestinations.delete(tapId);
@@ -316,7 +290,7 @@ export class Grok {
         // OK - we have a consumer that we want to provide.
         // Now we need to check to see if this context/grip pair is already
         // has a different visible producer by doing a resolveConsumer.
-        ?????
+        this.resolveConsumer(current, current, grip);
       }
     }
   }

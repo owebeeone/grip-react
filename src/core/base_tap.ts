@@ -41,6 +41,14 @@ export abstract class BaseTap implements Tap {
 
   }
 
+  getHomeContext(): GripContext | undefined {
+    return this.homeContext;
+  }
+
+  getParamsContext(): GripContext | undefined {
+    return this.paramsContext;
+  }
+
   // Called when the tap is attached to a home context.
   onAttach(home: GripContext | GripContextLike): void {
     var realHome : GripContext;
@@ -64,11 +72,11 @@ export abstract class BaseTap implements Tap {
     const grok: Grok = realHome.getGrok();
     this.engine = grok;
 
-    this.subscribeToIncomingParamss();
+    this.subscribeToIncomingParams();
   }
 
   // Subscribe to the incoming parameter drips.
-  private subscribeToIncomingParamss(): void {
+  private subscribeToIncomingParams(): void {
     if (!this.paramsContext || !this.destinationParamGrips) return;
 
     this.delayedUpdates = true;  // Delay updates while we subscribe to the incoming parameter drips.
