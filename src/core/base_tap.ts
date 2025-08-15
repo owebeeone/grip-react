@@ -5,7 +5,6 @@ import type { GripContextLike } from "./containers";
 import type { Grok } from "./grok";
 import type { Tap } from "./tap";
 import type { GripContextNode, Destination, ProducerRecord } from "./graph";
-import { count } from "console";
 
 // Base implementation that manages lifecycle and home/destination bookkeeping
 export abstract class BaseTap implements Tap {
@@ -87,7 +86,7 @@ export abstract class BaseTap implements Tap {
   inputParmsChanged(paramGrip: Grip<any>): void {
     this.paramUpdates.add(paramGrip);
     if (!this.delayedUpdates) {
-      this.produce({paramGrip: paramGrip});
+      this.produceOnParams!(paramGrip);
     }
   }
 

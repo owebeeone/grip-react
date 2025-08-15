@@ -77,10 +77,8 @@ export class GripContext {
   resolveOverrideWithSource<T>(_grip: Grip<T>): { override: Override; source: GripContext } | undefined { return undefined; }
 
 	// Create a child context
-	createChild(id?: string): GripContext {
-		const child = new GripContext(id).addParent(this, 0);
-		// Link new child to the same engine as parent (for tap lifecycle & publishing)
-		(child as any).__grok = (this as any).__grok;
+	createChild(opts?: { priority?: number}): GripContext {
+		const child = new GripContext(this.grok).addParent(this, opts?.priority ?? 0);
 		return child;
 	}
 

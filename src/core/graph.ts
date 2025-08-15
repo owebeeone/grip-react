@@ -23,7 +23,7 @@ export class ProducerRecord {
     var existing = this.destinations.get(destNode);
     var added = false;
     if (!existing) {
-      existing = new Destination(destNode, tap);
+      existing = new Destination(destNode, this.tap, this);
       this.destinations.set(destNode, existing);
       added = true;
     }
@@ -46,7 +46,7 @@ export class ProducerRecord {
   addDestination(destNode: GripContextNode, grip: Grip<any>): void {
     var existing = this.destinations.get(destNode);
     if (!existing) {
-      existing = new Destination(destNode);
+      existing = new Destination(destNode, this.tap, this);
       this.destinations.set(destNode, existing);
     }
     existing.addGrip(grip);
@@ -127,7 +127,8 @@ export class Destination {
       const drip = this.contextNode.getOrCreateConsumer(grip);
       this.destinationParamDrips.set(grip, drip);
       this.destinationDripsSubs.set(grip, drip.subscribePriority((v) => {
-        self.tap.produceOnDestParams(this.contextNode.get_context(), grip);
+        // The produceOnDestParams should exist, let's throw if it doesn't.
+        self.tap.produceOnDestParams!(this.contextNode.get_context(), grip);
       }));
     }
   }

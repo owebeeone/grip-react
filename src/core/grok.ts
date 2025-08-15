@@ -80,8 +80,8 @@ export class Grok {
   }
 
   // Create a new context optionally parented to a given context (defaults to main)
-  createContext(id?: string, parent?: GripContext, priority = 0): GripContext {
-    const ctx = new GripContext(this, id);
+  createContext(parent?: GripContext, priority = 0): GripContext {
+    const ctx = new GripContext(this);
     if (parent ?? this.mainContext) ctx.addParent(parent ?? this.mainContext, priority);
     (ctx as any).__grok = this;
     this.ensureNode(ctx);
@@ -98,17 +98,12 @@ export class Grok {
   }
 
   // Create a home context (optionally parented) and a presentation child context, returning a dual container
-  createDualContext(opts?: {
-    idPrefix?: string;
-    homeParent?: GripContext;
-    destPriority?: number;
-  }): DualContextContainer {
-    const idPrefix = opts?.idPrefix ?? undefined;
-    const homeId = idPrefix ? `${idPrefix}_home_${Math.random().toString(36).slice(2)}` : undefined;
-    const home = this.createContext(homeId, opts?.homeParent ?? this.mainContext, 0);
+  createDualContext(homeParent: GripContext,
+    opts?: { destPriority?: number;}
+  ): DualContextContainer {
+    const home = this.createContext(homeParent, 0);
     // Create presentation child off home
-    const destId = idPrefix ? `${idPrefix}_dest_${Math.random().toString(36).slice(2)}` : undefined;
-    const dest = home.createChild(destId);
+    const dest = home.createChild();
     // Ensure graph and resolver know about dest
     this.ensureNode(dest);
     const parents = dest.getParents().map(p => ({ id: p.ctx.id, priority: p.priority }));
@@ -212,7 +207,7 @@ export class Grok {
     const roots = Array<GripContext>();
     if (!this.resolveConsumer(ctx, ctx, grip, roots)) {
       for (const root of roots) {
-        this.resolveProducer(ctx, root, grip);
+        this.resolveProducer(ctx, root, new Set<Grip<any>>([grip as unknown as Grip<any>]));
       }
     }
 
