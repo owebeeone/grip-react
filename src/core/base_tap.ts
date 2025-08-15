@@ -55,8 +55,10 @@ export abstract class BaseTap implements Tap {
     }
     this.homeContext = realHome;
     this.paramsContext = paramContext;
-    this.producer = this.homeContext._getContextNode().getProducerRecord(this as unknown as Tap);
-    if (!this.producer) throw new Error("Grip not produced by this tap");
+    // Ensure a ProducerRecord exists for this tap at the home node
+    this.producer = this.homeContext
+      ._getContextNode()
+      .getOrCreateProducerRecord(this as unknown as Tap, this.provides);
 
     // Discover engine from context (engine ensures this linkage)
     const grok: Grok = realHome.getGrok();
@@ -121,8 +123,11 @@ export abstract class BaseTap implements Tap {
 
       for (const paramGrip of this.destinationParamGrips) {
         const paramDrip = dest.getOrCreateConsumer(paramGrip);
-
+        // subscription wiring handled by Destination; no-op here for now 
+        ?????// TODO: Implement this.
       }
+      // Produce initial values for this destination on first connect
+      this.produce({ destContext: dest });
     }
   }
 

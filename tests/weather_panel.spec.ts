@@ -15,46 +15,46 @@ describe('WeatherPanel-style multi-context, multi-parent with independent simple
     const grok = new Grok();
 
     // Build DAG: A (root child), B (parent A), C (parent A)
-    const A = grok.createContext('A', grok.mainContext);
-    const B = grok.createContext('B', A);
-    const C = grok.createContext('C', A);
+    const A = grok.mainContext.createChild();
+    const B = A.createChild();
+    const C = A.createChild();
 
     // Register one simple tap per context with distinct initials
-    const { tap: tapA } = createSimpleValueTap(VALUE, { initial: 'A', handleGrip: VALUE_TAP });
-    grok.registerTapAt(A, tapA);
+    const tapA = createSimpleValueTap(VALUE, { initial: 'A', handleGrip: VALUE_TAP });
+    grok.registerTapAt(A, tapA as unknown as any);
 
-    const { tap: tapB } = createSimpleValueTap(VALUE, { initial: 'B', handleGrip: VALUE_TAP });
-    grok.registerTapAt(B, tapB);
+    const tapB = createSimpleValueTap(VALUE, { initial: 'B', handleGrip: VALUE_TAP });
+    grok.registerTapAt(B, tapB as unknown as any);
 
-    const { tap: tapC } = createSimpleValueTap(VALUE, { initial: 'C', handleGrip: VALUE_TAP });
-    grok.registerTapAt(C, tapC);
+    const tapC = createSimpleValueTap(VALUE, { initial: 'C', handleGrip: VALUE_TAP });
+    grok.registerTapAt(C, tapC as unknown as any);
 
     // Connect: query both value and controller drips at each destination
     const vA1 = grok.query(VALUE, A);
-    const hA = grok.query(VALUE_TAP, A) as unknown as Drip<SimpleTap<string>>;
+    const hA = grok.query(VALUE_TAP, A);
     const vB1 = grok.query(VALUE, B);
-    const hB = grok.query(VALUE_TAP, B) as unknown as Drip<SimpleTap<string>>;
+    const hB = grok.query(VALUE_TAP, B);
     const vC1 = grok.query(VALUE, C);
-    const hC = grok.query(VALUE_TAP, C) as unknown as Drip<SimpleTap<string>>;
+    const hC = grok.query(VALUE_TAP, C);
 
     expect(vA1.get()).toBe('A');
     expect(vB1.get()).toBe('B');
     expect(vC1.get()).toBe('C');
 
     // Update B via its controller; A and C should remain unchanged
-    hB.get().set('BB');
+    hB.get()!.set('BB');
     expect(grok.query(VALUE, B).get()).toBe('BB');
     expect(grok.query(VALUE, A).get()).toBe('A');
     expect(grok.query(VALUE, C).get()).toBe('C');
 
     // Update A via its controller; B and C should remain unchanged (C has its own local provider)
-    hA.get().set('AA');
+    hA.get()!.set('AA');
     expect(grok.query(VALUE, A).get()).toBe('AA');
     expect(grok.query(VALUE, B).get()).toBe('BB');
     expect(grok.query(VALUE, C).get()).toBe('C');
 
     // Update C; only C should change
-    hC.get().set('CC');
+    hC.get()!.set('CC');
     expect(grok.query(VALUE, C).get()).toBe('CC');
     expect(grok.query(VALUE, A).get()).toBe('AA');
     expect(grok.query(VALUE, B).get()).toBe('BB');

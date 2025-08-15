@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Grok } from '../src/core/grok';
 import { GripRegistry, GripOf } from '../src/core/grip';
 import { Drip } from '../src/core/drip';
+import { createSimpleValueTap } from '../src/core/simple_tap';
 import type { Tap } from '../src/core/tap';
 
 describe('Engine publish()', () => {
@@ -11,14 +12,11 @@ describe('Engine publish()', () => {
     const OUT = defineGrip<number>('Pub.Out', 0);
     const grok = new Grok();
     const home = grok.mainContext;
-    const A = grok.createContext('A', home);
-    const B = grok.createContext('B', home);
+    const A = home.createChild();
+    const B = home.createChild();
 
-    const tap: Tap = {
-      provides: [OUT],
-      produce: () => new Drip<number>(1) as unknown as Drip<any>,
-    };
-    grok.registerTapAt(home, tap);
+    const tap = createSimpleValueTap(OUT, { initial: 1 });
+    grok.registerTapAt(home, tap as unknown as Tap);
 
     // connect
     expect(grok.query(OUT, A).get()).toBe(1);
@@ -38,21 +36,21 @@ describe('Engine publish()', () => {
     const OUT = defineGrip<number>('Pub.Out2', 0);
     const grok = new Grok();
     const home = grok.mainContext;
-    const A = grok.createContext('A', home);
-    const B = grok.createContext('B', home);
+    const A = home.createChild();
+    const B = home.createChild();
 
-    const ancestorTap: Tap = { provides: [OUT], produce: () => new Drip<number>(10) as unknown as Drip<any> };
-    grok.registerTapAt(home, ancestorTap);
+    const ancestorTap = createSimpleValueTap(OUT, { initial: 10 });
+    grok.registerTapAt(home, ancestorTap as unknown as Tap);
     expect(grok.query(OUT, A).get()).toBe(10);
     expect(grok.query(OUT, B).get()).toBe(10);
 
-    const localTap: Tap = { provides: [OUT], produce: () => new Drip<number>(7) as unknown as Drip<any> };
-    grok.registerTapAt(B, localTap);
+    const localTap = createSimpleValueTap(OUT, { initial: 7 });
+    grok.registerTapAt(B, localTap as unknown as Tap);
     // B now uses local provider
     expect(grok.query(OUT, B).get()).toBe(7);
 
     const updates = new Map([[OUT as any, 42]]);
-    grok.publish(home, ancestorTap, updates);
+    grok.publish(home, ancestorTap as unknown as Tap, updates);
 
     expect(grok.query(OUT, A).get()).toBe(42);
     // B remains from local tap
@@ -66,12 +64,12 @@ describe('Engine publish()', () => {
     const G2 = defineGrip<number>('Pub.G2', 2);
     const grok = new Grok();
     const home = grok.mainContext;
-    const D = grok.createContext('D', home);
+    const D = home.createChild();
 
-    const tap: Tap = {
-      provides: [G1, G2],
-      produce: () => new Drip<number>(g === G1 ? 1 : 2) as unknown as Drip<any>,
-    };
+    // const tap: Tap = {
+    //   provides: [G1, G2],
+    //   produce: () => new Drip<number>(g === G1 ? 1 : 2) as unknown as Drip<any>,
+    // };
     grok.registerTapAt(home, tap);
     expect(grok.query(G1, D).get()).toBe(1);
     expect(grok.query(G2, D).get()).toBe(2);

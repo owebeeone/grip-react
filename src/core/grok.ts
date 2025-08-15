@@ -37,7 +37,6 @@ function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
  * 
  */
 export class Grok {
-  private taps: Tap[] = [];
   private graph = new GrokGraph(this);
   private resolver = new SimpleResolver();
   // Context -> taps registered at that context
@@ -118,8 +117,7 @@ export class Grok {
 
   registerTapAt(ctx: GripContext | GripContextLike, tap: Tap): void {
     const homeCtx = (ctx && (ctx as any).getGripHomeContext) ? (ctx as GripContextLike).getGripHomeContext() : (ctx as GripContext);
-    // Track in simple array for compatibility
-    this.taps.push(tap);
+
     // Index by context
     const set = this.providersByContext.get(homeCtx.id) ?? new Set<Tap>();
     set.add(tap);
@@ -128,19 +126,24 @@ export class Grok {
     const ctxSet = this.tapToContexts.get(tap) ?? new Set<string>();
     ctxSet.add(homeCtx.id);
     this.tapToContexts.set(tap, ctxSet);
+    // // Ensure producer record at home node and record per provided grip
+    // const homeNode = this.graph.ensureNode(homeCtx);
+    // const rec = homeNode.getOrCreateProducerRecord(tap, tap.provides);
+    // for (const g of tap.provides) {
+    //   homeNode.recordProducer(g, rec);
+    // }
+    
     // Inform resolver for each provided grip
     for (const g of tap.provides) {
       this.resolver.registerLocalProvider(homeCtx.id, g.key);
     }
     this.resolver.propagateAdd(homeCtx.id, new Set(tap.provides.map(g => g.key)));
     // Notify tap
-    tap.onAttach?.(homeCtx);
+    tap.onAttach!(homeCtx);
   }
 
   unregisterTap(tap: Tap): void {
     const contexts = Array.from(this.tapToContexts.get(tap) ?? []);
-    const removed = this.taps.filter(t => t === tap);
-    this.taps = this.taps.filter(t => t !== tap);
     // Remove from indices and resolver
     for (const ctxId of contexts) {
       const providers = this.providersByContext.get(ctxId);
@@ -223,6 +226,8 @@ export class Grok {
       // We have a tap that provides this grip.
       // We need to resolve the drip to the tap.
       producer.addDestination(node, grip);
+      // // Attach the original destination context as a destination for this producer and grip.
+      // producer.addDestinationGrip(this.ensureNode(ctx), grip);
       return true;
     }
 

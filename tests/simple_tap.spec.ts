@@ -13,11 +13,11 @@ describe('SimpleTap', () => {
 
     const grok = new Grok();
     const home = grok.mainContext;
-    const destA = grok.createContext('A', home);
-    const destB = grok.createContext('B', home);
+    const destA = home.createChild();
+    const destB = home.createChild();
 
-    const { tap } = createSimpleValueTap(VALUE, { initial: 'A', handleGrip: VALUE_TAP });
-    grok.registerTapAt(home, tap);
+    const tap = createSimpleValueTap(VALUE, { initial: 'A', handleGrip: VALUE_TAP });
+    grok.registerTapAt(home, tap as unknown as any);
 
     // Connect destinations to provider by querying
     const vA1 = grok.query(VALUE, destA);
@@ -44,15 +44,15 @@ describe('SimpleTap', () => {
 
     const grok = new Grok();
     const homeRoot = grok.mainContext;
-    const homeChild = grok.createContext('HomeChild', homeRoot);
+    const homeChild = homeRoot.createChild();
 
-    const { tap: tapRoot } = createSimpleValueTap(VALUE, { initial: 'R', handleGrip: VALUE_TAP });
-    grok.registerTapAt(homeRoot, tapRoot);
-    const { tap: tapChild } = createSimpleValueTap(VALUE, { initial: 'C', handleGrip: VALUE_TAP });
-    grok.registerTapAt(homeChild, tapChild);
+    const tapRoot = createSimpleValueTap(VALUE, { initial: 'R', handleGrip: VALUE_TAP });
+    grok.registerTapAt(homeRoot, tapRoot as unknown as any);
+    const tapChild = createSimpleValueTap(VALUE, { initial: 'C', handleGrip: VALUE_TAP });
+    grok.registerTapAt(homeChild, tapChild as unknown as any);
 
-    const destR = grok.createContext('DestR', homeRoot);
-    const destC = grok.createContext('DestC', homeChild);
+    const destR = homeRoot.createChild();
+    const destC = homeChild.createChild();
 
     // Connect
     expect(grok.query(VALUE, destR).get()).toBe('R');
