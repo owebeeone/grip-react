@@ -54,10 +54,10 @@ export class ProducerRecord {
 
   // Remove the context/grip pair from this producer.
   removeDestinationGripForContext(destNode: GripContextNode, grip: Grip<any>): void {
-    const existing = this.destinations.get(destNode);
-    if (existing) {
-      existing.removeGrip(grip);
-      if (existing.getGrips().size === 0) {
+    const destination = this.destinations.get(destNode);
+    if (destination) {
+      destination.removeGrip(grip);
+      if (destination.getGrips().size === 0) {
         this.removeDestinationForContext(destNode);
       }
     }
@@ -102,9 +102,10 @@ export class ProducerRecord {
   }
 }
 
-// Destination aggregates the set of grips provided to a destination context by a specific provider
+// Destination caches the visibility state for a provider at a destination context
+// as well as manages any destination param drips that are needed for the provider.
 export class Destination {
-  private readonly contextNode: GripContextNode;
+  private readonly destContextNode: GripContextNode;
   private readonly grips: Set<Grip<any>>;
   private readonly tap: Tap;
   private readonly producer: ProducerRecord;
@@ -113,39 +114,58 @@ export class Destination {
   private readonly destinationParamDrips: Map<Grip<any>, Drip<any>> = new Map();
   private readonly destinationDripsSubs: Map<Grip<any>, Unsubscribe> = new Map();
 
-  constructor(contextNode: GripContextNode, tap: Tap, producer: ProducerRecord, grips?: Iterable<Grip<any>>, ) {
-    this.contextNode = contextNode;
+  /**
+   * destContextNode is The destination context node that this Destination is for.
+   * tap is the tap that is providing the grips to this destination.
+   * producer is the producer record that is providing the grips to this destination.
+   * grips is the set of grips that are being provided to this destination. Note that
+   * each destination may only have a subset of the grips that the provider provides
+   * because some grips may be shadowed by a different tap.
+   */
+  constructor(destContextNode: GripContextNode, tap: Tap, producer: ProducerRecord, grips?: Iterable<Grip<any>>, ) {
+    this.destContextNode = destContextNode;
     this.tap = tap;
     this.grips = new Set(grips ?? []);
     this.producer = producer;
   }
 
+  /**
+   * Register for destination params.
+   */
   registerDestinationParamDrips() {
     if (!this.tap.destinationParamGrips) return;
     const self = this;
     for (const grip of this.tap.destinationParamGrips) {
-      const drip = this.contextNode.getOrCreateConsumer(grip);
+      const drip = this.destContextNode.getOrCreateConsumer(grip);
       this.destinationParamDrips.set(grip, drip);
       this.destinationDripsSubs.set(grip, drip.subscribePriority((v) => {
         // The produceOnDestParams should exist, let's throw if it doesn't.
-        self.tap.produceOnDestParams!(this.contextNode.get_context(), grip);
+        self.tap.produceOnDestParams!(this.destContextNode.get_context(), grip);
       }));
     }
   }
 
+  /**
+   * Unregister for destination params.
+   */
   unregisterDestination() {
     for (const [grip, sub] of this.destinationDripsSubs) {
       sub();
     }
     this.destinationDripsSubs.clear();
     this.destinationParamDrips.clear();
-    this.producer.removeDestinationForContext(this.contextNode);
+    this.producer.removeDestinationForContext(this.destContextNode);
   }
 
   /**
    * Add a destination grip for this destination.
    */
   addGrip(g: Grip<any>) { 
+    if (this.grips.has(g)) return;
+    if (this.grips.size === 0) {
+      // Register for destination params on the first destination grip added.
+      this.registerDestinationParamDrips();
+    }
     this.grips.add(g); 
   }
 
@@ -153,7 +173,12 @@ export class Destination {
    * Removes a destination grip for this destination.
    */
   removeGrip(g: Grip<any>) {
+    if (!this.grips.has(g)) return;
     this.grips.delete(g); 
+    if (this.grips.size === 0) {
+      // Unregister for destination params if this is the last destination grip removed.
+      this.unregisterDestination();
+    }
   }
 
   /**
@@ -164,11 +189,11 @@ export class Destination {
   }
 
   getContext(): GripContext | undefined { 
-    return this.contextNode.contextRef.deref(); 
+    return this.destContextNode.contextRef.deref(); 
   }
   
   getContextNode() {
-    return this.contextNode
+    return this.destContextNode
   }
 }
 
@@ -241,6 +266,10 @@ export class GripContextNode implements GripContextNodeIf {
     this.lastSeen = Date.now();
   }
 
+  getResolvedProviders(): Map<Grip<any>, GripContextNode> {
+    return this.resolvedProviders;
+  }
+
   setResolvedProvider<T>(grip: Grip<T>, node: GripContextNode): void {
     this.resolvedProviders.set(grip as unknown as Grip<any>, node);
   }
@@ -268,7 +297,7 @@ export class GripContextNode implements GripContextNodeIf {
     if (!drip) {
       const ctx = this.get_context() as GripContext;
       if (!ctx) throw new Error("Context is gone"); // This should never happen.
-      drip = new Drip<T>(ctx, grip.defaultValue as any);
+      drip = new Drip<T>(ctx, grip.defaultValue as unknown as T | undefined);
       this.recordConsumer(grip, drip);
       drip.addOnZeroSubscribers(() => {
         this.removeConsumerForGrip(grip);

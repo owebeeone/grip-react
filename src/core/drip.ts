@@ -19,7 +19,7 @@ export class Drip<T> {
   private zeroSubCallbacks = new Set<() => void>();
   private enqueued = false;
 
-  constructor(context: GripContext, initial: T) {
+  constructor(context: GripContext, initial: T | undefined) {
     this.context = context;
     this.value = initial;
   }

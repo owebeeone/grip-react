@@ -107,7 +107,6 @@ export abstract class BaseTap implements Tap {
     return destination;
   }
 
-
   onConnect(dest: GripContext, grip: Grip<any>): void {
     // If we have destinationParamGrips, we need to connect to them.
     if (this.destinationParamGrips) {
@@ -121,25 +120,20 @@ export abstract class BaseTap implements Tap {
       const destination = this.producer?.getDestinations().get(dest._getContextNode());
       if (!destination) throw new Error("Destination not found for this tap");
 
+      const destContextNode = dest._getContextNode();
       for (const paramGrip of this.destinationParamGrips) {
-        const paramDrip = dest.getOrCreateConsumer(paramGrip);
-        // subscription wiring handled by Destination; no-op here for now 
-        ?????// TODO: Implement this.
+        if (!destContextNode.get_consumers().has(paramGrip)) continue;
+        destination.addGrip(paramGrip);
       }
-      // Produce initial values for this destination on first connect
-      this.produce({ destContext: dest });
     }
+    // Always publish initial values to this destination upon connect
+    this.produce({ destContext: dest });
   }
 
   onDisconnect(dest: GripContext, grip: Grip<any>): void {
     const destination = this.getDestination(dest);
     if (!destination) throw new Error("Destination not found for this tap");
     destination.removeGrip(grip);
-    if (destination.getGrips().size === 0) {
-      // There are no grips being provided to this destination.
-      // Remove the destination from the producer.
-      destination.unregisterDestination();
-    }
   }
 
   getDestination(dest: GripContext): Destination | undefined {

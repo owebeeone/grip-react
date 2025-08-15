@@ -207,42 +207,70 @@ export class Grok {
     drip = ctx.getOrCreateConsumer(grip);
 
     // If we encounter a root we don't use it unless there were no other options.
-    const roots = Array<GripContext>();
-    if (!this.resolveConsumer(ctx, ctx, grip, roots)) {
-      for (const root of roots) {
-        this.resolveProducer(ctx, root, new Set<Grip<any>>([grip as unknown as Grip<any>]));
-      }
-    }
+    this.resolveConsumer(ctx, ctx, grip);
 
     return drip;
   }
 
-  resolveConsumer(ctx: GripContext, current: GripContext, grip: Grip<any>, roots: GripContext[]): boolean {
+  resolveConsumer(dest: GripContext, source: GripContext, grip: Grip<any>): void {
+    const roots = Array<GripContext>();
+    const visited = new Set<GripContext>();
+    // See if we can resolve the consumer by looking at parents.
+    if(this.resolveConsumerStage1(dest, source, grip, visited, roots)) return;
+  
+    // If we didn't find a producer in the current context, then we need to
+    // check the roots encountered as we treat roots as a last resort.
+    var dummyRoots = Array<GripContext>();
+    for (const root of roots) {
+      if (this.resolveConsumerStage1(dest, root, grip, visited, dummyRoots)) {
+        // We found a producer in a root context. We're done.
+        return;
+      }
+    }
+    // Didn't find a producer then we need to make sure this is a detached
+    // drip.
+    this.unresolveConsumer(dest, grip);
+  }
+
+  unresolveConsumer(dest: GripContext | GripContextNode, grip: Grip<any>): void {
+    const destNode = dest instanceof GripContextNode ? dest : this.ensureNode(dest);
+    const resolvedProviders = destNode.getResolvedProviders();
+    const providerNode = resolvedProviders.get(grip);
+    if (providerNode) {
+      providerNode.removeDestinationForContext(grip, destNode);
+      resolvedProviders.delete(grip);
+    }
+  }
+
+  resolveConsumerStage1(
+    dest: GripContext, 
+    source: GripContext, 
+    grip: Grip<any>, 
+    visited: Set<GripContext>,
+    roots: GripContext[]): boolean {
     // Check to see if the current context has a tap that provides this grip.
-    var node = this.ensureNode(current);
-    var producer = node.get_producers().get(grip);
+    var sourceNode = this.ensureNode(source);
+    var producer = sourceNode.get_producers().get(grip);
 
     if (producer) {
       // We have a tap that provides this grip.
       // We need to resolve the drip to the tap.
-      producer.addDestination(node, grip);
+      producer.addDestination(sourceNode, grip);
       // // Attach the original destination context as a destination for this producer and grip.
       // producer.addDestinationGrip(this.ensureNode(ctx), grip);
       return true;
     }
 
-    const checked_parents = new Set<GripContext>();
-
     // Check all parents all the way up to the root.
-    for (const parent of current.getParents()) {
+    for (const parent of source.getParents()) {
       const parentCtx = parent.ctx;
       if (parentCtx.isRoot()) {
         roots.push(parentCtx);
         continue;
       }
-      if (checked_parents.has(parentCtx)) continue;
-      checked_parents.add(parentCtx);
-      if (this.resolveConsumer(ctx, parentCtx, grip, roots)) return true;
+      if (visited.has(parentCtx)) continue;
+      visited.add(parentCtx);
+      if (this.resolveConsumerStage1(dest, parentCtx, grip, visited, roots)) return true;
     }
 
     return false;
@@ -257,7 +285,11 @@ export class Grok {
       const node = this.ensureNode(current);
       const producers = node.get_producers();
 
-      // If this
+      // If there are producers that can provide the grips, then these shadow our
+      // grips so we remove them from the available grips. If we're completely
+      // overridden, then we return. There may have been other contexts that where
+      // we successfully resolved or there may be more grips being registered later
+      // where the source context can provide data for.
       if (producers.size > 0) {
         const common = intersection(available_grips, producers.keys());
         if (common.size > 0) {
@@ -269,15 +301,22 @@ export class Grok {
         }
       }
     } else {
+      // On the first call in the recursion we set the current context to be undefined.
+      // as we don't want to shadow ourselves. In this case we do want to prodice for
+      // local consumers.
       current = ctx;
     }
 
+    // This is where we check for consumers in the "current" destination context.
     const node = this.ensureNode(current);
     // Now scan the children to find any consumers that can be provided by the producers context.
     const consumers = node.get_consumers();
     for (const [grip, drip] of consumers) {
       if (available_grips.has(grip)) {
         // OK - we have a consumer that we want to provide.
+        // Now we need to check to see if this context/grip pair is already
+        // has a different visible producer by doing a resolveConsumer.
+        ?????
       }
     }
   }
