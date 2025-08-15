@@ -5,7 +5,6 @@ import { Tap } from "./tap";
 import { GrokGraph, GripContextNode, ProducerRecord } from "./graph";
 import { DualContextContainer } from "./containers";
 import type { GripContextLike } from "./containers";
-import { SimpleResolver } from "./resolver";
 import { TaskHandleHolder, TaskQueue } from "./task_queue";
 
 function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
@@ -38,7 +37,6 @@ function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
  */
 export class Grok {
   private graph = new GrokGraph(this);
-  private resolver = new SimpleResolver();
 
   private taskQueue = new TaskQueue({ autoFlush: false, useMicrotask: false });
 
@@ -53,9 +51,6 @@ export class Grok {
     (this.mainContext as any).__grok = this;
     this.graph.ensureNode(this.rootContext);
     this.graph.ensureNode(this.mainContext);
-    // Initialize resolver parent links
-    this.resolver.setParents(this.rootContext.id, []);
-    this.resolver.setParents(this.mainContext.id, [{ id: this.rootContext.id, priority: 0 }]);
   }
 
   hasCycle(newNode: GripContextNode): boolean {
@@ -80,9 +75,6 @@ export class Grok {
     if (parent ?? this.mainContext) ctx.addParent(parent ?? this.mainContext, priority);
     (ctx as any).__grok = this;
     this.ensureNode(ctx);
-    // update resolver parents
-    const parents = ctx.getParents().map(p => ({ id: p.ctx.id, priority: p.priority }));
-    this.resolver.setParents(ctx.id, parents);
     return ctx;
   }
 
@@ -101,8 +93,6 @@ export class Grok {
     const dest = home.createChild();
     // Ensure graph and resolver know about dest
     this.ensureNode(dest);
-    const parents = dest.getParents().map(p => ({ id: p.ctx.id, priority: p.priority }));
-    this.resolver.setParents(dest.id, parents);
     return new DualContextContainer(home, dest);
   }
 
@@ -118,51 +108,38 @@ export class Grok {
   }
 
   unregisterTap(tap: Tap): void {
-    const context = tap.getHomeContext();
+    const ctxId = tap.getHomeContext();
     // Remove from indices and resolver
-    if (context) {
-      const providers = this.providersByContext.get(ctxId);
-      if (providers) {
-        providers.delete(tap);
-        if (providers.size === 0) this.providersByContext.delete(ctxId);
-      }
+    if (ctxId) {
       // propagate removal for all grips provided by this tap
-      const homeNode = this.graph.getNodeById(ctxId);
-      if (homeNode) {
-        const rec = homeNode.producerByTap.get(tap);
-        if (rec) {
-          const gripKeys = new Set<string>(Array.from(rec.outputs).map(g => g.key));
-          if (gripKeys.size > 0) this.resolver.propagateRemove(ctxId, gripKeys);
-          // Clear tracked consumers for all destinations for this tap's grips
-          for (const dest of rec.getDestinations().values()) {
-            for (const g of dest.getGrips()) {
-              const node = dest.getContextNode()
-              node.unregisterSource(g);
-            }
+      const homeNode = this.ensureNode(ctxId);
+      const rec = homeNode.producerByTap.get(tap);
+      if (rec) {
+        const gripKeys = new Set<string>(Array.from(rec.outputs).map(g => g.key));
+        // Clear tracked consumers for all destinations for this tap's grips
+        for (const dest of rec.getDestinations().values()) {
+          for (const g of dest.getGrips()) {
+            const node = dest.getContextNode()
+            node.unregisterSource(g);
           }
-          homeNode.producerByTap.delete(tap);
         }
+        homeNode.producerByTap.delete(tap);
       }
-
     }
-    this.tapToContexts.delete(tap);
-    // this.tapDestinations.delete(tapId);
-    // Evict any cached drips produced by this tap
-    // handled above per destination
   }
 
-  // indexTapDestination removed; use ProducerRecord destinations instead
+  // // indexTapDestination removed; use ProducerRecord destinations instead
 
-  // Broadcast new values produced by a tap to all destination contexts currently mapped under a home context
-  publish(home: GripContext, tap: Tap, updates: Map<Grip<any>, any>): number {
-    const homeNode = this.graph.getNode(home);
-    if (!homeNode) return 0;
-    const rec = homeNode.producerByTap.get(tap);
-    if (!rec) return 0;
-    return rec.publish(updates, (destCtx: GripContext, grip: Grip<any>, value: any) => {
-      this.graph.notifyConsumers(destCtx, grip as any, value);
-    });
-  }
+  // // Broadcast new values produced by a tap to all destination contexts currently mapped under a home context
+  // publish(home: GripContext, tap: Tap, updates: Map<Grip<any>, any>): number {
+  //   const homeNode = this.graph.getNode(home);
+  //   if (!homeNode) return 0;
+  //   const rec = homeNode.producerByTap.get(tap);
+  //   if (!rec) return 0;
+  //   return rec.publish(updates, (destCtx: GripContext, grip: Grip<any>, value: any) => {
+  //     this.graph.notifyConsumers(destCtx, grip as any, value);
+  //   });
+  // }
 
   // publishFrom removed: callers must know the home (producer) context
 
