@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Grok } from '../src/core/grok';
 import { GripRegistry, GripOf } from '../src/core/grip';
 import { Drip } from '../src/core/drip';
-import { createSimpleValueTap } from '../src/core/simple_tap';
+import { createSimpleValueTap, SimpleTap, SimpleValueTap } from '../src/core/simple_tap';
 import type { Tap } from '../src/core/tap';
 
 describe('Engine publish()', () => {
@@ -66,11 +66,11 @@ describe('Engine publish()', () => {
     const home = grok.mainContext;
     const D = home.createChild();
 
-    // const tap: Tap = {
-    //   provides: [G1, G2],
-    //   produce: () => new Drip<number>(g === G1 ? 1 : 2) as unknown as Drip<any>,
-    // };
-    grok.registerTapAt(home, tap);
+    // TODO - use MultiSimpleTap
+    const tap1 = createSimpleValueTap(G1, { initial: 1 });
+    const tap2 = createSimpleValueTap(G2, { initial: 2 });
+    grok.registerTapAt(home, tap1 as unknown as Tap);
+    grok.registerTapAt(home, tap2 as unknown as Tap);
     expect(grok.query(G1, D).get()).toBe(1);
     expect(grok.query(G2, D).get()).toBe(2);
 
@@ -78,7 +78,8 @@ describe('Engine publish()', () => {
       [G1 as any, 11],
       [G2 as any, 22],
     ]);
-    grok.publish(home, tap, updates as any);
+    (tap1 as any as Tap).produce();
+    (tap2 as any as Tap).produce();
 
     expect(grok.query(G1, D).get()).toBe(11);
     expect(grok.query(G2, D).get()).toBe(22);

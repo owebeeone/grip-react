@@ -26,6 +26,8 @@ export class ProducerRecord {
       existing = new Destination(destNode, this.tap, this);
       this.destinations.set(destNode, existing);
       added = true;
+      // Register any per-destination parameter subscriptions
+      existing.registerDestinationParamDrips();
     }
     existing.addGrip(grip);
     if (added) {
@@ -48,6 +50,8 @@ export class ProducerRecord {
     if (!existing) {
       existing = new Destination(destNode, this.tap, this);
       this.destinations.set(destNode, existing);
+      // Register any per-destination parameter subscriptions
+      existing.registerDestinationParamDrips();
     }
     existing.addGrip(grip);
   }

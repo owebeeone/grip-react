@@ -134,7 +134,7 @@ export abstract class BaseTap implements Tap {
         destination.addGrip(paramGrip);
       }
     }
-    // Always publish initial values to this destination upon connect
+    // Always publish initial values for this destination upon connect
     this.produce({ destContext: dest });
   }
 

@@ -4,7 +4,6 @@ import { GripContext } from "./context";
 import type { Grok } from "./grok";
 import type { Tap } from "./tap";
 import { BaseTapNoParams } from "./base_tap";
-import { ProducerRecord } from "./graph";
 
 export interface SimpleTapHandle<T> {
   get: () => T | undefined;
@@ -17,7 +16,7 @@ export type SimpleTap<T> = SimpleTapHandle<T>;
 /**
  * A simple tap contains it's value.
  */
-class SimpleValueTap<T> extends BaseTapNoParams implements SimpleTap<T> {
+export class SimpleValueTap<T> extends BaseTapNoParams implements SimpleTap<T>, Tap {
   private currentValue: T | undefined;
   private valueGrip: Grip<T>;
   private handleGrip: Grip<SimpleTapHandle<T>> | undefined;
@@ -45,7 +44,7 @@ class SimpleValueTap<T> extends BaseTapNoParams implements SimpleTap<T> {
     return this.currentValue;
   }
 
-  set(value: T): void {
+  set(value: T | undefined): void {
     // Only produce if the value has changed.
     if (this.currentValue !== value) {
       this.currentValue = value;
@@ -78,7 +77,7 @@ export interface MultiSimpleTapHandle {
 
 export type MultiSimpleTap = MultiSimpleTapHandle;
 
-export class MultiSimpleValueTap extends BaseTapNoParams implements MultiSimpleTap {
+export class MultiSimpleValueTap extends BaseTapNoParams implements MultiSimpleTap, Tap {
     private readonly values = new Map<Grip<any>, any | undefined>();
     private readonly valueGrips: ReadonlyArray<Grip<any>>;
     private readonly handleGrip?: Grip<MultiSimpleTapHandle>;

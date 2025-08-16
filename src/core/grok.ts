@@ -65,6 +65,11 @@ export class Grok {
     this.taskQueue.submitWeak(taskQueueCallback, 0, handleHolder);
   }
 
+  // Drain the internal task queue (useful for tests to assert post-update state)
+  flush(): void {
+    this.taskQueue.flush();
+  }
+
   ensureNode(ctx: GripContext): GripContextNode {
     return this.graph.ensureNode(ctx);
   }
@@ -205,10 +210,11 @@ export class Grok {
 
     if (producer) {
       // We have a tap that provides this grip.
-      // We need to resolve the drip to the tap.
-      producer.addDestination(sourceNode, grip);
-      // // Attach the original destination context as a destination for this producer and grip.
-      // producer.addDestinationGrip(this.ensureNode(ctx), grip);
+      // Link the producer to the original destination context for this grip
+      const destNode = this.ensureNode(dest);
+      producer.addDestinationGrip(destNode, grip);
+      // Record the resolved provider for cleanup from the destination side
+      destNode.setResolvedProvider(grip, sourceNode);
       return true;
     }
 
