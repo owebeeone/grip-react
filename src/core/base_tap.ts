@@ -109,6 +109,7 @@ export abstract class BaseTap implements Tap {
   onDetach(): void {
     this.engine = undefined;
     this.homeContext = undefined;
+    this.producer = undefined;
   }
 
   getDestinationsForNode(node: GripContextNode, grip: Grip<any>): Destination | undefined {

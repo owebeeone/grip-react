@@ -42,6 +42,12 @@ export class ProducerRecord {
   removeDestinationForContext(destCtx: GripContextNode): void {
     this.destinations.delete(destCtx);
     if (this.destinations.size === 0) {
+      // Only detach if the tap's home context still exists and there are truly no destinations
+      const homeCtx = this.tap.getHomeContext?.();
+      if (!homeCtx) {
+        // Tap thinks it's detached; nothing to do
+        return;
+      }
       this.tap.onDetach?.();
     }
   }
@@ -314,6 +320,12 @@ export class GripContextNode implements GripContextNodeIf {
   recordConsumer<T>(grip: Grip<T>, drip: Drip<T>): void {
     this.consumers.set(grip as unknown as Grip<any>, new WeakRef(drip as unknown as Drip<any>));
     this.lastSeen = Date.now();
+    drip.addOnFirstSubscriber(() => {
+      const ctx = this.get_context();
+      if (ctx) {
+        this.grok.resolver.addConsumer(ctx, grip as unknown as Grip<any>);
+      }
+    });
   }
 
   getOrCreateConsumer<T>(grip: Grip<T>): Drip<T> {
@@ -350,6 +362,8 @@ export class GripContextNode implements GripContextNodeIf {
   removeConsumerForGrip<T>(grip: Grip<T>): void {
     this.consumers.delete(grip as unknown as Grip<any>);
     this.unregisterSource(grip);
+    // Clear resolved provider so future subscriptions re-resolve and re-link
+    this.resolvedProviders.delete(grip as unknown as Grip<any>);
   }
 
   // If we have a producer configured for this grip, unregister ourselves from it.

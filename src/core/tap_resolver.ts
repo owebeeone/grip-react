@@ -109,6 +109,7 @@ export class SimpleResolver implements IGripResolver {
             producerNode.recordProducer(grip, producerRecord);
         }
 
+        // Ensure the tap is now considered attached (home/prod already recorded by onAttach)
         // Per the spec, we must re-evaluate all consumers in the producer's
         // own context and all descendant consumers that could be affected.
         const descendants = [producerNode, ...this.getDescendants(producerNode)];
@@ -209,6 +210,11 @@ export class SimpleResolver implements IGripResolver {
             if (newProducerNode) {
                 const producerRecord = newProducerNode.get_producers().get(grip);
                 if (producerRecord) {
+                    // If the tap was previously detached (no destinations), re-attach it to its home before connecting
+                    const homeCtx = newProducerNode.get_context();
+                    if (homeCtx && !producerRecord.tap.getHomeContext()) {
+                        producerRecord.tap.onAttach?.(homeCtx);
+                    }
                     producerRecord.addDestinationGrip(node, grip);
                     node.setResolvedProvider(grip, newProducerNode);
                 }

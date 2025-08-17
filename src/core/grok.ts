@@ -39,7 +39,7 @@ function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
 export class Grok {
   private graph = new GrokGraph(this);
 
-  private taskQueue = new TaskQueue({ autoFlush: false, useMicrotask: false });
+  private taskQueue = new TaskQueue();
 
   readonly rootContext: GripContext;
   readonly mainContext: GripContext;
@@ -155,7 +155,11 @@ export class Grok {
 
     var drip = ctxNode.getLiveDripForGrip(grip);
 
-    if (drip) { // Best case we have a live drip and it should be resolved to a tap or fallback.
+    if (drip) { // Best case we have a live drip; ensure it's resolved to a producer
+      const hasProvider = ctxNode.getResolvedProviders().has(grip as unknown as Grip<any>);
+      if (!hasProvider) {
+        this.resolver.addConsumer(ctx, grip as unknown as Grip<any>);
+      }
       return drip;
     }
 
