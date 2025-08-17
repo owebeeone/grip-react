@@ -177,6 +177,25 @@ export class Destination {
   }
 
   /**
+   * Returns the current value for a specific destination parameter grip at this destination.
+   */
+  getDestinationParamValue<T>(grip: Grip<T>): T | undefined {
+    const d = this.destinationParamDrips.get(grip as unknown as Grip<any>);
+    return d?.get() as T | undefined;
+  }
+
+  /**
+   * Returns a snapshot map of all destination parameter values for this destination.
+   */
+  getAllDestinationParamValues(): Map<Grip<any>, any> {
+    const map = new Map<Grip<any>, any>();
+    for (const [g, d] of this.destinationParamDrips) {
+      map.set(g as unknown as Grip<any>, d.get());
+    }
+    return map;
+  }
+
+  /**
    * Add a destination grip for this destination.
    */
   addGrip(g: Grip<any>) { 

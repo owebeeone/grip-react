@@ -155,6 +155,22 @@ export abstract class BaseTap implements Tap {
     return this.producer?.getDestinations().get(dest._getContextNode());
   }
 
+  /**
+   * Convenience: read a destination parameter value for a specific grip without exposing Destination.
+   */
+  protected getDestParamValue<T>(dest: GripContext, grip: Grip<T>): T | undefined {
+    const d = this.getDestination(dest);
+    return d?.getDestinationParamValue(grip);
+  }
+
+  /**
+   * Convenience: snapshot of all destination parameter values as a map.
+   */
+  protected getAllDestParamValues(dest: GripContext): Map<Grip<any>, any> | undefined {
+    const d = this.getDestination(dest);
+    return d?.getAllDestinationParamValues();
+  }
+
   // This will publish the updates to a single destination or all destinations.
   // If this tap has destinationParamGrips, then it's assumed that each destination
   // will have a different set of updates, however, it's up to the tap implementation
