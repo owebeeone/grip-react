@@ -60,7 +60,7 @@ export class SimpleValueTap<T> extends BaseTapNoParams implements SimpleTap<T>, 
 export function createSimpleValueTap<T>(
   grip: Grip<T>,
   opts?: { initial?: T; handleGrip?: Grip<any> }
-): SimpleTap<T> {
+): SimpleValueTap<T> {
 
   const tap: SimpleValueTap<T> = new SimpleValueTap<T>(
     grip, opts?.initial ?? grip.defaultValue, opts);

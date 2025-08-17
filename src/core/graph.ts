@@ -30,8 +30,12 @@ export class ProducerRecord {
       existing.registerDestinationParamDrips();
     }
     existing.addGrip(grip);
+    const destCtx = destNode.get_context();
     if (added) {
-      this.tap.onConnect?.(destNode.get_context() as GripContext, grip);
+      this.tap.onConnect?.(destCtx as GripContext, grip);
+    } else {
+      // Ensure newly added grips (e.g., handle grip) receive initial values
+      if (destCtx) this.tap.produce({ destContext: destCtx });
     }
   }
 

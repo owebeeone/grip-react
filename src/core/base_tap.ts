@@ -68,6 +68,12 @@ export abstract class BaseTap implements Tap {
       ._getContextNode()
       .getOrCreateProducerRecord(this as unknown as Tap, this.provides);
 
+    // Record this producer under each provided grip for visibility/resolution
+    const homeNode = this.homeContext._getContextNode();
+    for (const g of this.provides) {
+      homeNode.recordProducer(g as unknown as Grip<any>, this.producer);
+    }
+
     // Discover engine from context (engine ensures this linkage)
     const grok: Grok = realHome.getGrok();
     this.engine = grok;
