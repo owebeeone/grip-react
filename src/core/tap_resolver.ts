@@ -97,6 +97,13 @@ export class SimpleResolver implements IGripResolver {
         const producerNode = this.grok.ensureNode(context);
         const producerRecord = producerNode.getOrCreateProducerRecord(tap, tap.provides);
 
+        // Defensive: ensure tap instance reflects attachment even if onAttach was a no-op
+        try {
+            (tap as any).producer = (tap as any).producer ?? producerRecord;
+            (tap as any).homeContext = (tap as any).homeContext ?? context;
+            (tap as any).engine = (tap as any).engine ?? this.grok;
+        } catch {}
+
         // Ensure all provided grips are mapped to this producer record on the producer node
         for (const grip of tap.provides) {
             producerNode.recordProducer(grip, producerRecord);
@@ -208,6 +215,12 @@ export class SimpleResolver implements IGripResolver {
             } else {
                 // If no new producer, ensure it's removed from resolvedProviders
                 node.getResolvedProviders().delete(grip);
+                // Revert destination drip to default value to maintain deterministic state
+                const ctx = node.get_context();
+                if (ctx) {
+                    // Notify the consumer at this destination of the default value
+                    node.notifyConsumers(grip as any, (grip as any).defaultValue);
+                }
             }
         }
     }

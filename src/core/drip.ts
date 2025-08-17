@@ -53,7 +53,8 @@ export class Drip<T> {
     this.notifyImmediateSubscribers();
     if (!this.enqueued) {
       this.enqueued = true;
-      this.context.submitWeakTask(this.taskQueueCallback);
+      const self = this;
+      this.context.submitWeakTask(() => self.taskQueueCallback());
     }
   }
 

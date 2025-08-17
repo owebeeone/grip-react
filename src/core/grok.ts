@@ -120,6 +120,11 @@ export class Grok {
     this.resolver.addProducer(homeCtx, tap);
   }
 
+  // Convenience registration at main context
+  registerTap(tap: Tap): void {
+    this.registerTapAt(this.mainContext, tap);
+  }
+
   unregisterTap(tap: Tap): void {
     const homeCtx = tap.getHomeContext();
     if (homeCtx) {

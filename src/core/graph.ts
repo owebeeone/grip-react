@@ -145,6 +145,11 @@ export class Destination {
     const self = this;
     for (const grip of this.tap.destinationParamGrips) {
       const drip = this.destContextNode.getOrCreateConsumer(grip);
+      const destCtx = this.destContextNode.get_context();
+      if (destCtx) {
+        // Ensure the parameter consumer is resolved to a provider
+        destCtx.getGrok().resolver.addConsumer(destCtx, grip);
+      }
       this.destinationParamDrips.set(grip, drip);
       this.destinationDripsSubs.set(grip, drip.subscribePriority((v) => {
         // The produceOnDestParams should exist, let's throw if it doesn't.
