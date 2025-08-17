@@ -16,5 +16,6 @@ export {
   createMultiSimpleValueTap as createMultiSimpleValueTap
 } from "./core/simple_tap";
 export { BaseTap, BaseTapNoParams } from "./core/base_tap";
+export { GripGraphVisualizer } from "./react/graph_visual";
 export * from "./react/provider";
 export * from "./react/hooks";
