@@ -88,6 +88,8 @@ export class FunctionTap<
     if (this.homeParamGrips && this.homeParamGrips.length > 0) {
       for (const g of this.homeParamGrips) {
         const d = home.getOrCreateConsumer(g);
+        // Ensure resolution to a provider for the home parameter
+        home.getGrok().resolver.addConsumer(home, g as unknown as Grip<any>);
         const unsub = d.subscribe(() => {
           this.produce();
         });
