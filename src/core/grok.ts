@@ -116,8 +116,8 @@ export class Grok {
 
   registerTapAt(ctx: GripContext | GripContextLike, tap: Tap): void {
     const homeCtx = (ctx && (ctx as any).getGripHomeContext) ? (ctx as GripContextLike).getGripHomeContext() : (ctx as GripContext);
-
-    tap.onAttach!(homeCtx);
+    // Delegate to resolver for attach and re-resolution
+    this.resolver.addProducer(homeCtx, tap);
   }
 
   unregisterTap(tap: Tap): void {
