@@ -20,6 +20,7 @@ export class GripContext {
   constructor(engine: Grok, id?: string) {
     this.grok = engine;
     this.id = id ?? `ctx_${Math.random().toString(36).slice(2)}`;
+    //console.log(`GripContext: Created new context with ID: ${this.id}`);
     this.contextNode = engine.ensureNode(this);
   }
 
@@ -51,14 +52,29 @@ export class GripContext {
 
     const parent_ref = { ctx: parent, priority };
     this.parents.push(parent_ref);
-    this.parents.sort((a, b) => b.priority - a.priority);
+    this.parents.sort((a, b) => a.priority - b.priority);
+
+    // Ensure the corresponding GripContextNode also registers the parent
+    this.contextNode.addParent(parent.contextNode);
 
     if (this.grok.hasCycle(this.contextNode)) {
       // Remmove the node we just added so bad things don't happen if we continue.
       this.parents = this.parents.filter(p => p !== parent_ref);
+      // Also remove the node-level parent relationship if cycle is detected
+      // Note: A corresponding removeParent method on GripContextNode would be ideal here
       throw new Error("Cycle detected in context DAG");
     }
 
+    return this;
+  }
+
+  unlinkParent(parent: GripContext): this {
+    const idx = this.parents.findIndex(p => p.ctx === parent);
+    if (idx !== -1) {
+      const [removed] = this.parents.splice(idx, 1);
+      // Update the node graph linkage as well
+      this.contextNode.removeParent(parent._getContextNode());
+    }
     return this;
   }
 
@@ -92,15 +108,12 @@ export class GripContext {
 
 	// --- App-facing helpers to manage taps without referencing the engine ---
 	registerTap(tap: Tap): void {
-		const grok = (this as any).__grokRef?.deref?.() ?? (this as any).__grok;
-		if (!grok) throw new Error("Context is not attached to an engine");
-		grok.registerTapAt(this, tap);
+		if (!this.grok) throw new Error("Context is not attached to an engine");
+		this.grok.registerTapAt(this, tap);
 	}
 
 	unregisterTap(tap: Tap): void {
-		const grok = (this as any).__grokRef?.deref?.() ?? (this as any).__grok;
-		if (!grok) return;
-		grok.unregisterTap(tap);
+		this.grok.unregisterTap(tap);
 	}
 
   unregisterSource(grip: Grip<any>): void {

@@ -265,6 +265,17 @@ export class GripContextNode implements GripContextNodeIf {
     }
   }
 
+  removeParent(parent: GripContextNode): void {
+    const idx = this.parents.indexOf(parent);
+    if (idx !== -1) {
+      this.parents.splice(idx, 1);
+    }
+    const cidx = parent.children.indexOf(this);
+    if (cidx !== -1) {
+      parent.children.splice(cidx, 1);
+    }
+  }
+
   recordProducer<T>(grip: Grip<T>, rec: ProducerRecord): void {
     this.producers.set(grip as unknown as Grip<any>, rec);
     this.lastSeen = Date.now();
@@ -393,12 +404,15 @@ export class GrokGraph {
     if (!node) {
       node = new GripContextNode(this.grok, ctx);
       this.nodes.set(ctx.id, node);
+      //console.log(`GrokGraph: Created new node for context: ${ctx.id}`);
       // Connect parents hard
       for (const { ctx: parentCtx } of ctx.getParents()) {
         const parentNode = this.ensureNode(parentCtx);
         node.addParent(parentNode);
       }
       this.startGcIfNeeded();
+    } else {
+      //console.log(`GrokGraph: Retrieved existing node for context: ${ctx.id}`);
     }
     node.touch();
     return node;
@@ -414,6 +428,10 @@ export class GrokGraph {
 
   snapshot(): ReadonlyMap<string, GripContextNode> {
     return this.nodes;
+  }
+
+  clearNodes(): void {
+    this.nodes.clear();
   }
 
   // Notify all live consumers for a grip in a destination context

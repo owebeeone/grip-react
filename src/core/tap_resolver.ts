@@ -4,6 +4,26 @@ import { Tap } from "./tap";
 import { Grok } from "./grok";
 import { GripContextNode } from "./graph";
 
+function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
+  const result = new Set<T>();
+  for (const item of iterable) {
+    if (setA.has(item)) {
+      result.add(item);
+    }
+  }
+  return result;
+}
+
+function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
+  const result = new Set<T>();
+  for (const item of setA) {
+    if (!setB.has(item)) {
+      result.add(item);
+    }
+  }
+  return result;
+}
+
 /**
  * Defines the interface for a pluggable resolver that manages producer-consumer
  * relationships within the Grip graph.
@@ -59,19 +79,32 @@ export class SimpleResolver implements IGripResolver {
 
     addConsumer(context: GripContext, grip: Grip<any>): void {
         const node = this.grok.ensureNode(context);
+        // Ensure the consumer is recorded on the node so future re-evaluations can find it
+        node.getOrCreateConsumer(grip);
         this.resolveConsumer(node, grip);
     }
 
     removeConsumer(context: GripContext, grip: Grip<any>): void {
         const node = this.grok.ensureNode(context);
         this.unresolveConsumer(node, grip);
+        // Remove the consumer from the node's registry
+        node.removeConsumerForGrip(grip);
     }
 
     addProducer(context: GripContext, tap: Tap): void {
+        // Attach tap to context so it tracks its home and sets up producer record
+        tap.onAttach?.(context);
         const producerNode = this.grok.ensureNode(context);
-        // Per the spec, we must re-evaluate all descendant consumers
-        // that could be affected by the new producer's grips.
-        const descendants = this.getDescendants(producerNode);
+        const producerRecord = producerNode.getOrCreateProducerRecord(tap, tap.provides);
+
+        // Ensure all provided grips are mapped to this producer record on the producer node
+        for (const grip of tap.provides) {
+            producerNode.recordProducer(grip, producerRecord);
+        }
+
+        // Per the spec, we must re-evaluate all consumers in the producer's
+        // own context and all descendant consumers that could be affected.
+        const descendants = [producerNode, ...this.getDescendants(producerNode)];
         const providedGrips = new Set(tap.provides);
 
         for (const descendant of descendants) {
@@ -89,15 +122,38 @@ export class SimpleResolver implements IGripResolver {
         const producerRecord = producerNode.getProducerRecord(tap);
         if (!producerRecord) return;
 
-        // Find all consumers that were linked to this producer and re-resolve them.
-        const destinations = Array.from(producerRecord.getDestinations().values());
-        for (const destination of destinations) {
+        // Snapshot all (destination, grip) pairs to re-evaluate after removal
+        const pairs: Array<{ destNode: GripContextNode; grip: Grip<any> }> = [];
+        for (const destination of Array.from(producerRecord.getDestinations().values())) {
             const destNode = destination.getContextNode();
             for (const grip of destination.getGrips()) {
-                // Unlink first, then find a new producer.
-                this.unresolveConsumer(destNode, grip);
-                this.resolveConsumer(destNode, grip);
+                pairs.push({ destNode, grip });
             }
+        }
+
+        // Remove the grip -> producer mapping for this tap's grips if pointing to this record
+        for (const grip of tap.provides) {
+            const current = producerNode.get_producers().get(grip);
+            if (current === producerRecord) {
+                producerNode.get_producers().delete(grip);
+            }
+        }
+        // Remove the producer record from the node and notify tap
+        producerNode.producerByTap.delete(tap);
+        tap.onDetach?.();
+
+        // Now unresolve and re-resolve each affected destination/grip
+        for (const { destNode, grip } of pairs) {
+            // Remove resolved link if currently pointing to this producer
+            const resolvedProviders = destNode.getResolvedProviders();
+            const linkedNode = resolvedProviders.get(grip);
+            if (linkedNode === producerNode) {
+                resolvedProviders.delete(grip);
+            }
+            // Remove destination from the old record to keep it tidy
+            producerRecord.removeDestinationGripForContext(destNode, grip);
+            // Re-resolve to find next-best provider
+            this.resolveConsumer(destNode, grip);
         }
     }
 
@@ -106,6 +162,9 @@ export class SimpleResolver implements IGripResolver {
     }
 
     unlinkParent(context: GripContext, parent: GripContext): void {
+        // Update the graph to reflect the removed parent, then re-evaluate.
+        // If the context implementation does not support unlinking, this is a no-op.
+        (context as any).unlinkParent?.(parent);
         this.reevaluateDescendants(context);
     }
 
@@ -117,7 +176,9 @@ export class SimpleResolver implements IGripResolver {
         const startNode = this.grok.ensureNode(context);
         const descendants = [startNode, ...this.getDescendants(startNode)];
         for (const descendant of descendants) {
-            for (const [grip, _] of descendant.get_consumers()) {
+            // Collect all grips for which this descendant has consumers
+            const consumerGrips = Array.from(descendant.get_consumers().keys());
+            for (const grip of consumerGrips) {
                 this.resolveConsumer(descendant, grip);
             }
         }
@@ -126,18 +187,27 @@ export class SimpleResolver implements IGripResolver {
     /**
      * Resolves a single consumer and updates the graph state.
      */
-    private resolveConsumer(node: GripContextNode, grip: Grip<any>): void {
-        // First, unlink any existing producer to ensure a clean slate.
-        this.unresolveConsumer(node, grip);
-        
-        const producerNode = this.findProducerFor(node, grip);
+    resolveConsumer(node: GripContextNode, grip: Grip<any>): void {
+        const currentProducerNode = node.getResolvedProviders().get(grip);
+        const newProducerNode = this.findProducerFor(node, grip);
 
-        if (producerNode) {
-            // Link the consumer to the new producer.
-            const producerRecord = producerNode.get_producers().get(grip);
-            if (producerRecord) {
-                producerRecord.addDestinationGrip(node, grip);
-                node.setResolvedProvider(grip, producerNode);
+        // If the new producer is different, or if we previously had a producer and now don't (or vice versa)
+        if (currentProducerNode !== newProducerNode) {
+            // Unlink from the old producer if it existed
+            if (currentProducerNode) {
+                this.unresolveConsumer(node, grip);
+            }
+
+            // Link to the new producer if one was found
+            if (newProducerNode) {
+                const producerRecord = newProducerNode.get_producers().get(grip);
+                if (producerRecord) {
+                    producerRecord.addDestinationGrip(node, grip);
+                    node.setResolvedProvider(grip, newProducerNode);
+                }
+            } else {
+                // If no new producer, ensure it's removed from resolvedProviders
+                node.getResolvedProviders().delete(grip);
             }
         }
     }
@@ -145,11 +215,13 @@ export class SimpleResolver implements IGripResolver {
     /**
      * Unlinks a consumer from its current producer, if any.
      */
-    private unresolveConsumer(destNode: GripContextNode, grip: Grip<any>): void {
+    unresolveConsumer(destNode: GripContextNode, grip: Grip<any>): void {
         const resolvedProviders = destNode.getResolvedProviders();
         const producerNode = resolvedProviders.get(grip);
         if (producerNode) {
             producerNode.removeDestinationForContext(grip, destNode);
+            // Only delete from resolvedProviders if the producer was successfully removed
+            // This ensures that if the removal fails for some reason, the state is still consistent.
             resolvedProviders.delete(grip);
         }
     }
@@ -166,32 +238,38 @@ export class SimpleResolver implements IGripResolver {
 
         const queue: GripContextNode[] = [];
         const visited = new Set<GripContextNode>();
+        
+        // Add startNode to queue and visited set
+        queue.push(startNode);
         visited.add(startNode);
         
-        // 2. Initial queue population: non-roots first, then roots.
-        const parents = startNode.get_parent_nodes();
-        const nonRoots = parents.filter(p => !p.get_context()?.isRoot());
-        const roots = parents.filter(p => p.get_context()?.isRoot());
-        queue.push(...nonRoots, ...roots);
-
         // 3. BFS search
         while (queue.length > 0) {
             const currentNode = queue.shift()!;
-
-            if (visited.has(currentNode)) {
-                continue;
-            }
-            visited.add(currentNode);
-
+            // Check if current node has the producer
             if (currentNode.get_producers().has(grip)) {
                 return currentNode; // Found the closest producer.
             }
 
-            // Enqueue parents for the next level, maintaining root-last order.
-            const nextParents = currentNode.get_parent_nodes();
-            const nextNonRoots = nextParents.filter(p => !p.get_context()?.isRoot());
-            const nextRoots = nextParents.filter(p => p.get_context()?.isRoot());
-            queue.push(...nextNonRoots, ...nextRoots);
+            // Enqueue parents for the next level, maintaining root-last order
+            // and explicit priority ordering from the context layer.
+            const sourceCtx = currentNode.get_context();
+            const orderedParents = sourceCtx ? sourceCtx.getParents() : [];
+            const nonRoots: GripContextNode[] = [];
+            const roots: GripContextNode[] = [];
+
+            for (const { ctx: parentCtx } of orderedParents) {
+                const parentNode = this.grok.ensureNode(parentCtx);
+                if (!visited.has(parentNode)) {
+                    if (parentCtx.isRoot()) {
+                        roots.push(parentNode);
+                    } else {
+                        nonRoots.push(parentNode);
+                    }
+                    visited.add(parentNode); // Mark as visited when enqueued
+                }
+            }
+            queue.push(...nonRoots, ...roots);
         }
 
         // 4. No producer found.
@@ -221,5 +299,89 @@ export class SimpleResolver implements IGripResolver {
             }
         }
         return Array.from(descendants);
+    }
+
+    // Internal helpers used by Grok's original resolve flow retained for completeness
+    resolveConsumerStage1(
+      dest: GripContext,
+      source: GripContext,
+      grip: Grip<any>,
+      visited: Set<GripContext>,
+      roots: GripContext[]
+    ): boolean {
+      // This method is tightly coupled with Grok's internal graph traversal.
+      // SimpleResolver (this class) is responsible for this logic.
+      // Re-implementing the core logic here from Grok's original resolveConsumerStage1
+      // Check to see if the current context has a tap that provides this grip.
+      var sourceNode = this.grok.ensureNode(source);
+      var producer = sourceNode.get_producers().get(grip);
+  
+      if (producer) {
+        // We have a tap that provides this grip.
+        // Link the producer to the original destination context for this grip
+        const destNode = this.grok.ensureNode(dest);
+        producer.addDestinationGrip(destNode, grip);
+        // Record the resolved provider for cleanup from the destination side
+        destNode.setResolvedProvider(grip, sourceNode);
+        return true;
+      }
+  
+      // Check all parents all the way up to the root.
+      for (const parent of source.getParents()) {
+        const parentCtx = parent.ctx;
+        if (parentCtx.isRoot()) {
+          roots.push(parentCtx);
+          continue;
+        }
+        if (visited.has(parentCtx)) continue;
+        visited.add(parentCtx);
+        if (this.resolveConsumerStage1(dest, parentCtx, grip, visited, roots)) return true;
+      }
+  
+      return false;
+    }
+
+    resolveProducer(ctx: GripContext, current: GripContext | undefined, grips: Set<Grip<any>>) {
+      var available_grips = grips;
+  
+      // Check to see local consumers first.
+      if (current) {
+        const node = this.grok.ensureNode(current);
+        const producers = node.get_producers();
+  
+        // If there are producers that can provide the grips, then these shadow our
+        // grips so we remove them from the available grips. If we're completely
+        // overridden, then we return. There may have been other contexts that where
+        // we successfully resolved or there may be more grips being registered later
+        // where the source context can provide data for.
+        if (producers.size > 0) {
+          const common = intersection(available_grips, producers.keys());
+          if (common.size > 0) {
+            available_grips = difference(available_grips, common);
+            if (available_grips.size === 0) {
+              // The available grips are completely overridden by other producers.
+              return;
+            }
+          }
+        }
+      } else {
+        // On the first call in the recursion we set the current context to be undefined.
+        // as we don't want to shadow ourselves. In this case we do want to prodice for
+        // local consumers.
+        current = ctx;
+      }
+  
+      // This is where we check for consumers in the "current" destination context.
+      const node = this.grok.ensureNode(current);
+      // Now scan the children to find any consumers that can be provided by the producers context.
+      const consumers = node.get_consumers();
+      for (const [grip, drip] of consumers) {
+        if (available_grips.has(grip)) {
+          // OK - we have a consumer that we want to provide.
+          // Now we need to check to see if this context/grip pair is already
+          // has a different visible producer by doing a resolveConsumer.
+          this.resolveConsumer(node, grip);
+        }
+      }
     }
 }

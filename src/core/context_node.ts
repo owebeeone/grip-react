@@ -28,6 +28,7 @@ export interface GripContextNodeIf {
     get_children_nodes(): GripContextNode[];
     get_producers(): Map<Grip<any>, ProducerRecord>;
     get_consumers(): Map<Grip<any>, WeakRef<Drip<any>>>;
+    getResolvedProviders(): Map<Grip<any>, GripContextNode>;
 
     addParent(parent: GripContextNode): void;
 
