@@ -4,7 +4,17 @@ export * from "./core/drip";
 export * from "./core/tap";
 export * from "./core/grok";
 export * from "./core/containers";
-export * from "./core/simple_tap";
-export * from "./core/base_tap";
+// Explicit re-exports to ensure they are present in bundled d.ts and runtime exports
+export { 
+  SimpleTapHandle as SimpleTapHandle,
+  SimpleTap as SimpleTap,
+  SimpleValueTap as SimpleValueTap,
+  createSimpleValueTap as createSimpleValueTap,
+  MultiSimpleTapHandle as MultiSimpleTapHandle,
+  MultiSimpleTap as MultiSimpleTap,
+  MultiSimpleValueTap as MultiSimpleValueTap,
+  createMultiSimpleValueTap as createMultiSimpleValueTap
+} from "./core/simple_tap";
+export { BaseTap, BaseTapNoParams } from "./core/base_tap";
 export * from "./react/provider";
 export * from "./react/hooks";
