@@ -101,32 +101,84 @@ describe('Engine add/remove live taps', () => {
   it('registering at ancestor connects descendants where applicable', () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
-    const OUT = defineGrip<number>('Out', 0);
+    const OUT = defineGrip<number>('Out', 33);
     const grok = new Grok();
     const A = grok.mainContext.createChild();
     const B = A.createChild();
 
+    const dA = grok.query(OUT, A);
+    var dAunsub = false;
+    const dAsub = dA.subscribe(v => {
+      dAunsub = true;
+    });
+    expect(dA.get()).toBe(33);
+
     // Initially, no tap: descendant resolves to default
     const d0 = grok.query(OUT, B);
-    expect(d0.get()).toBe(0);
+    var d0count = 0;
+    const dBsub = d0.subscribe(v => {
+      d0count += 1;
+    });
+
+    expect(d0.get()).toBe(33);
+    expect(dA.get()).toBe(33);
+    grok.flush();
+    expect(d0count).toBe(0);  // Gets updated before the tap is registered.
 
     // Register a tap (global registration acts as ancestor availability)
-    const tap = createSimpleValueTap(OUT, { initial: 123 }) as unknown as Tap;
-    grok.registerTap(tap);
+    const tap = createSimpleValueTap(OUT, { initial: 123 });  // register at main context.
+    grok.registerTap(tap);  // register at main context.
 
     // Descendant now resolves to the tap-produced value
     const d1 = grok.query(OUT, B);
+    var d1count = 0;
+    const dBsub2 = d1.subscribe(v => {
+      d1count += 1;
+    });
+
+    expect(d0.get()).toBe(123);
     expect(d1.get()).toBe(123);
+    expect(dA.get()).toBe(123);
+    grok.flush();
+    expect(d0count).toBe(1);  // Gets updated before the tap is registered.
 
     // A closer provider via local tap overshadows the ancestor tap
-    const localTap = createSimpleValueTap(OUT, { initial: 7 }) as unknown as Tap;
+    const localTap = createSimpleValueTap(OUT, { initial: 7 });
     grok.registerTapAt(B, localTap);
     const d2 = grok.query(OUT, B);
     expect(d2.get()).toBe(7);
+    grok.flush();
+    expect(d0count).toBe(2);
 
     // Ancestor without override still sees the tap value
-    const dA = grok.query(OUT, A);
+    const dAx = grok.query(OUT, A);
+    expect(dAx).toBe(dA);
     expect(dA.get()).toBe(123);
+    expect(d2.get()).toBe(7);
+
+    // Unregister the tap at main context.
+    grok.unregisterTap(tap);
+    expect(dA.get()).toBe(33);
+    expect(d2.get()).toBe(7);
+
+    localTap.set(99);
+    expect(dA.get()).toBe(33);
+    expect(d2.get()).toBe(99);
+    grok.flush();
+    expect(d0count).toBe(3);
+
+
+    dBsub(); // Unsubscribe from d0.
+    localTap.set(66);
+    expect(dA.get()).toBe(33);
+    expect(d2.get()).toBe(66);
+    grok.flush();
+    expect(d0count).toBe(3);  // Unsubscribed, so no update.
+
+    // Unregister the tap at B.
+    grok.unregisterTap(localTap);
+    expect(dA.get()).toBe(33);
+    expect(d2.get()).toBe(33);
   });
   
   it('unregistering disconnects and re-resolves to next provider', () => {
