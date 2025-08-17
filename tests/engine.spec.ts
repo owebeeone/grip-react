@@ -40,6 +40,7 @@ describe('Engine shared drip semantics', () => {
     expect(seen).toEqual([2, 20]);
     u1();
     u2();
+    grok.flush();
     // zero-subscribers is notified when last unsubscribes
     expect(zero).toBe(1);
   });

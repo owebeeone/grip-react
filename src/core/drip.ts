@@ -18,6 +18,7 @@ export class Drip<T> {
   private firstSubCallbacks = new Set<() => void>();
   private zeroSubCallbacks = new Set<() => void>();
   private enqueued = false;
+  private zeroCheckScheduled = false;
 
   constructor(context: GripContext, initial: T | undefined) {
     this.context = context;
@@ -84,8 +85,16 @@ export class Drip<T> {
     return () => {
       if (queue.has(fn)) {
         queue.delete(fn);
-        if (!this.hasSubscribers()) {
-          this.zeroSubCallbacks.forEach(cb => cb());
+        // Defer zero-subscriber cleanup to allow transient resubscribe patterns
+        if (!this.hasSubscribers() && !this.zeroCheckScheduled) {
+          this.zeroCheckScheduled = true;
+          const self = this;
+          this.context.submitWeakTask(() => {
+            self.zeroCheckScheduled = false;
+            if (!self.hasSubscribers()) {
+              self.zeroSubCallbacks.forEach(cb => cb());
+            }
+          });
         }
       }
     };
@@ -109,8 +118,15 @@ export class Drip<T> {
 
   // Intended for internal use by managed unsubscribe wrappers
   _notifyUnsubscribed(): void {
-    if (this.subs.size === 0) {
-      this.zeroSubCallbacks.forEach(cb => cb());
+    if (this.subs.size === 0 && !this.zeroCheckScheduled) {
+      this.zeroCheckScheduled = true;
+      const self = this;
+      this.context.submitWeakTask(() => {
+        self.zeroCheckScheduled = false;
+        if (!self.hasSubscribers()) {
+          self.zeroSubCallbacks.forEach(cb => cb());
+        }
+      });
     }
   }
 }

@@ -1,10 +1,10 @@
-import { useSyncExternalStore, useMemo, useEffect } from "react";
+import { useSyncExternalStore, useMemo, useEffect, useCallback } from "react";
 import { Grip } from "../core/grip";
 import { GripContext } from "../core/context";
 import type { GripContextLike } from "../core/containers";
 import { useRuntime } from "./provider";
 import { Tap } from "../core/tap";
-import { createSimpleValueTap } from "../core/simple_tap";
+import { createSimpleValueTap, SimpleTapHandle } from "../core/simple_tap";
 
 // useGrip(grip, [ctx]) -> value (reactive)
 export function useGrip<T>(grip: Grip<T>, ctx?: GripContext | GripContextLike): T | undefined {
@@ -14,14 +14,15 @@ export function useGrip<T>(grip: Grip<T>, ctx?: GripContext | GripContextLike): 
   // Get (and memoize) the Drip for this grip+ctx
   const drip = useMemo(() => grok.query(grip, activeCtx), [grok, activeCtx, grip]);
 
-  // Subscribe via useSyncExternalStore
-  const get = () => drip.get();
-  return useSyncExternalStore((fn) => drip.subscribe(() => fn()), get, get);
+  // Subscribe via useSyncExternalStore with memoized callbacks
+  const get = useCallback(() => drip.get(), [drip]);
+  const subscribe = useCallback((notify: () => void) => drip.subscribe(() => notify()), [drip]);
+  return useSyncExternalStore(subscribe, get, get);
 }
 
 export function useSimpleValueTap<T>(
   grip: Grip<T>,
-  opts?: { ctx?: GripContext; tapGrip?: Grip<any>; initial?: T }
+  opts?: { ctx?: GripContext; tapGrip?: Grip<SimpleTapHandle<T>>; initial?: T }
 ): void {
   const { context: providerCtx } = useRuntime();
   const ctx = opts?.ctx ?? providerCtx;
