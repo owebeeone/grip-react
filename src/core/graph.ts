@@ -201,7 +201,7 @@ export class Destination {
   addGrip(g: Grip<any>) { 
     if (this.grips.has(g)) return;
     if (this.grips.size === 0) {
-      // Register for destination params on the first destination grip added.
+      // Register for destination params on the first OUTPUT grip added (not for param grips)
       this.registerDestinationParamDrips();
     }
     this.grips.add(g); 

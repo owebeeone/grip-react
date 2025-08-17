@@ -123,24 +123,6 @@ export abstract class BaseTap implements Tap {
   }
 
   onConnect(dest: GripContext, grip: Grip<any>): void {
-    // If we have destinationParamGrips, we need to connect to them.
-    if (this.destinationParamGrips) {
-      // Get the destination context node.
-      const homeContext = this.homeContext;
-      if (!homeContext) throw new Error("Tap not attached to a home context");
-      const homeNode = homeContext._getContextNode();
-      if (!homeNode) throw new Error("Home context has no node");
-
-      // Get the destinations record for this producer.
-      const destination = this.producer?.getDestinations().get(dest._getContextNode());
-      if (!destination) throw new Error("Destination not found for this tap");
-
-      const destContextNode = dest._getContextNode();
-      for (const paramGrip of this.destinationParamGrips) {
-        if (!destContextNode.get_consumers().has(paramGrip)) continue;
-        destination.addGrip(paramGrip);
-      }
-    }
     // Always publish initial values for this destination upon connect
     this.produce({ destContext: dest });
   }
