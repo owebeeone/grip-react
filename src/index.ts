@@ -17,5 +17,8 @@ export {
 } from "./core/simple_tap";
 export { BaseTap, BaseTapNoParams } from "./core/base_tap";
 export { GripGraphVisualizer } from "./react/graph_visual";
+export { GraphDumpDialog } from "./react/GraphDumpDialog";
+export { GraphDumpButton } from "./react/GraphDumpButton";
+export { GripGraphDumper, GraphDumpKeyRegistry } from "./core/graph_dump";
 export * from "./react/provider";
 export * from "./react/hooks";

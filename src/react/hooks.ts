@@ -5,7 +5,27 @@ import { GripContext } from "../core/context";
 import type { GripContextLike } from "../core/containers";
 import { useRuntime } from "./provider";
 import { Tap } from "../core/tap";
-import { createSimpleValueTap, SimpleTapHandle } from "../core/simple_tap";
+import { createSimpleValueTap, SimpleTap, SimpleTapHandle } from "../core/simple_tap";
+
+export function useSimpleValueTap<T>(
+  grip: Grip<T>,
+  opts?: {
+    ctx?: GripContext;
+    initial?: T;
+    tapGrip?: Grip<SimpleTapHandle<T>>;
+  }
+): SimpleTap<T> {
+  const tap = useMemo(
+    () => createSimpleValueTap(grip, { initial: opts?.initial, handleGrip: opts?.tapGrip }),
+    [grip, opts?.initial, opts?.tapGrip]
+  );
+  useTap(() => tap, { ctx: opts?.ctx, deps: [tap] });
+  const get = useCallback(() => tap, [tap]);
+  return useSyncExternalStore(
+    (notify) => (tap as any).subscribe(notify),
+    get, get
+  );
+}
 
 // useGrip(grip, [ctx]) -> value (reactive)
 export function useGrip<T>(grip: Grip<T>, ctx?: GripContext | GripContextLike): T | undefined {
@@ -19,25 +39,6 @@ export function useGrip<T>(grip: Grip<T>, ctx?: GripContext | GripContextLike): 
   const get = useCallback(() => drip.get(), [drip]);
   const subscribe = useCallback((notify: () => void) => drip.subscribe(() => notify()), [drip]);
   return useSyncExternalStore(subscribe, get, get);
-}
-
-export function useSimpleValueTap<T>(
-  grip: Grip<T>,
-  opts?: { ctx?: GripContext; tapGrip?: Grip<SimpleTapHandle<T>>; initial?: T }
-): void {
-  const { context: providerCtx } = useRuntime();
-  const ctx = opts?.ctx ?? providerCtx;
-
-  // create the tap only when ctx changes (ignore subsequent initial changes)
-  const tap: Tap = useMemo(
-    () => createSimpleValueTap(grip, { initial: opts?.initial, handleGrip: opts?.tapGrip }) as unknown as Tap,
-    [ctx, grip, opts?.tapGrip] // intentionally exclude opts?.initial
-  );
-
-  useEffect(() => {
-    ctx.registerTap(tap);
-    return () => { ctx.unregisterTap(tap); };
-  }, [ctx, tap]);
 }
 
 export function useTap(

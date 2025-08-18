@@ -20,6 +20,7 @@ export class SimpleValueTap<T> extends BaseTapNoParams implements SimpleTap<T>, 
   private currentValue: T | undefined;
   private valueGrip: Grip<T>;
   private handleGrip: Grip<SimpleTapHandle<T>> | undefined;
+  private listeners = new Set<() => void>();
 
   constructor(grip: Grip<T>, initial: T | undefined, opts?: { handleGrip?: Grip<any> }) 
   { 
@@ -49,7 +50,13 @@ export class SimpleValueTap<T> extends BaseTapNoParams implements SimpleTap<T>, 
     if (this.currentValue !== value) {
       this.currentValue = value;
       this.produce();
+      this.listeners.forEach(l => l());
     }
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 }
 
