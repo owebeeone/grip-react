@@ -83,15 +83,16 @@ export abstract class BaseTap implements Tap {
 
   // Subscribe to the incoming parameter drips.
   private subscribeToIncomingParams(): void {
-    if (!this.paramsContext || !this.destinationParamGrips) return;
+    // Subscribe only to homeParamGrips at the params/home context.
+    // Destination param subscriptions are handled per-destination in Destination.registerDestinationParamDrips().
+    if (!this.paramsContext || !this.homeParamGrips || this.homeParamGrips.length === 0) return;
 
     this.delayedUpdates = true;  // Delay updates while we subscribe to the incoming parameter drips.
     const self = this;
 
-    // Subscribe to all the incoming parameter drips.
-    for (const paramGrip of this.destinationParamGrips) {
+    for (const paramGrip of this.homeParamGrips) {
       const paramDrip = this.paramsContext.getOrCreateConsumer(paramGrip);
-      const sub = paramDrip.subscribe((v) => {
+      const sub = paramDrip.subscribe(() => {
         self.inputParmsChanged(paramGrip);
       });
       this.paramDrips.set(paramGrip, paramDrip);
@@ -110,6 +111,12 @@ export abstract class BaseTap implements Tap {
     this.engine = undefined;
     this.homeContext = undefined;
     this.producer = undefined;
+    // Clean up any home/params subscriptions
+    for (const unsub of this.paramDripsSubs.values()) {
+      try { unsub(); } catch {}
+    }
+    this.paramDripsSubs.clear();
+    this.paramDrips.clear();
   }
 
   getDestinationsForNode(node: GripContextNode, grip: Grip<any>): Destination | undefined {

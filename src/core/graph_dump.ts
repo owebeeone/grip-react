@@ -9,6 +9,8 @@ export interface GraphDumpSummary {
 	contextCount: number;
 	tapCount: number;
 	dripCount: number;
+	collectedContextCount: number;
+	liveContextCount: number;
 }
 
 export interface GraphDumpNodeContext {
@@ -41,6 +43,7 @@ export interface GraphDumpNodeDrip {
 	providerTap?: string;
 	destContext: string;
 	valuePreview?: unknown;
+ 	subscriberCount?: number;
 }
 
 export interface GraphDump {
@@ -144,10 +147,14 @@ export class GripGraphDumper {
 			}
 		}
 
+		const collectedContextCount = contexts.reduce((acc, c) => acc + (c.gcStatus === "collected" ? 1 : 0), 0);
+		const liveContextCount = contexts.length - collectedContextCount;
 		const summary: GraphDumpSummary = {
 			contextCount: contexts.length,
 			tapCount: taps.length,
 			dripCount: drips.length,
+			collectedContextCount,
+			liveContextCount,
 		};
 		return { timestampIso, summary, nodes: { contexts, taps, drips } };
 	}
@@ -253,6 +260,7 @@ export class GripGraphDumper {
 		const destContext = this.keys.getContextKey(destNode);
 		const providerTapKey = this.findProviderTapKey(destNode, grip);
 		const valuePreview = this.opts.includeValues ? this.previewValue(drip.get()) : undefined;
+		const subscriberCount = this.countSubscribers(drip);
 		return {
 			key,
 			type: "Drip",
@@ -260,6 +268,7 @@ export class GripGraphDumper {
 			providerTap: providerTapKey,
 			destContext,
 			valuePreview,
+			subscriberCount,
 		};
 	}
 
@@ -291,6 +300,17 @@ export class GripGraphDumper {
 	private computeGcStatus(ctx: GripContext | undefined): "live" | "collected" | "unknown" {
 		// If WeakRef is unavailable, we cannot infer; however in this runtime it exists
 		return ctx ? "live" : "collected";
+	}
+
+	private countSubscribers(drip: Drip<any>): number | undefined {
+		try {
+			const anyDrip = drip as any;
+			const a = anyDrip.subs instanceof Set ? anyDrip.subs.size : 0;
+			const b = anyDrip.immediateSubs instanceof Set ? anyDrip.immediateSubs.size : 0;
+			return a + b;
+		} catch {
+			return undefined;
+		}
 	}
 }
 
