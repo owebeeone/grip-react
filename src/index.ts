@@ -20,5 +20,8 @@ export { GripGraphVisualizer } from "./react/graph_visual";
 export { GraphDumpDialog } from "./react/GraphDumpDialog";
 export { GraphDumpButton } from "./react/GraphDumpButton";
 export { GripGraphDumper, GraphDumpKeyRegistry } from "./core/graph_dump";
+export { LruTtlCache } from "./core/async_cache";
+export { createDebouncer } from "./core/debounce";
+export { BaseAsyncTap, createAsyncValueTap, createAsyncMultiTap } from "./core/async_tap";
 export * from "./react/provider";
 export * from "./react/hooks";
