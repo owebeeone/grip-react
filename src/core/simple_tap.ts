@@ -64,6 +64,19 @@ export class SimpleValueTap<T> extends BaseTapNoParams implements SimpleTap<T>, 
 // - Provides a per-(tap, grip, destCtx) drip with an initial value
 // - Exposes get/set helpers that operate via grok.query to reuse engine cache/drips
 
+// Overload 1: When initial value is provided and is non-nullable, return SimpleValueTap with non-nullable type
+export function createSimpleValueTap<T>(
+  grip: Grip<T | undefined>,
+  opts: { initial: NonNullable<T>; handleGrip?: Grip<any> }
+): SimpleValueTap<NonNullable<T>>;
+
+// Overload 2: Standard case - return SimpleValueTap with original grip type
+export function createSimpleValueTap<T>(
+  grip: Grip<T>,
+  opts?: { initial?: T; handleGrip?: Grip<any> }
+): SimpleValueTap<T>;
+
+// Implementation
 export function createSimpleValueTap<T>(
   grip: Grip<T>,
   opts?: { initial?: T; handleGrip?: Grip<any> }
@@ -71,7 +84,7 @@ export function createSimpleValueTap<T>(
 
   const tap: SimpleValueTap<T> = new SimpleValueTap<T>(
     grip, opts?.initial ?? grip.defaultValue, opts);
-  return tap;
+  return tap as any;
 }
 
 

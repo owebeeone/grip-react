@@ -7,14 +7,37 @@ import { useRuntime } from "./provider";
 import { Tap } from "../core/tap";
 import { createSimpleValueTap, SimpleTap, SimpleTapHandle } from "../core/simple_tap";
 
-export function useSimpleValueTap<T>(
-  grip: Grip<T>,
+
+
+// Overload 1: When initial value is provided and is non-nullable, return SimpleTap with non-nullable type
+export function useSimpleValueTap<TGrip>(
+  grip: Grip<TGrip | undefined>,
+  opts: {
+    ctx?: GripContext;
+    initial: NonNullable<TGrip>;
+    tapGrip?: Grip<SimpleTapHandle<NonNullable<TGrip>>>;
+  }
+): SimpleTap<NonNullable<TGrip>>;
+
+// Overload 2: Standard case - return SimpleTap with original grip type  
+export function useSimpleValueTap<TGrip>(
+  grip: Grip<TGrip>,
   opts?: {
     ctx?: GripContext;
-    initial?: T;
-    tapGrip?: Grip<SimpleTapHandle<T>>;
+    initial?: TGrip;
+    tapGrip?: Grip<SimpleTapHandle<TGrip>>;
   }
-): SimpleTap<T> {
+): SimpleTap<TGrip>;
+
+// Implementation
+export function useSimpleValueTap<TGrip>(
+  grip: Grip<TGrip>,
+  opts?: {
+    ctx?: GripContext;
+    initial?: TGrip;
+    tapGrip?: Grip<SimpleTapHandle<TGrip>>;
+  }
+): SimpleTap<TGrip> {
   const tap = useMemo(
     () => createSimpleValueTap(grip, { initial: opts?.initial, handleGrip: opts?.tapGrip }),
     [grip, opts?.initial, opts?.tapGrip]

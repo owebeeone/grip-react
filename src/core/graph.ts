@@ -161,6 +161,10 @@ export class Destination {
         // The produceOnDestParams should exist, let's throw if it doesn't.
         self.tap.produceOnDestParams!(this.destContextNode.get_context(), grip);
       }));
+      // Kick an initial evaluation using current param values so async taps can start immediately
+      if (self.tap.produceOnDestParams) {
+        self.tap.produceOnDestParams(this.destContextNode.get_context(), grip);
+      }
     }
   }
 

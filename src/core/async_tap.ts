@@ -11,6 +11,7 @@ interface DestState {
   seq: number;
   key?: string;
   deadlineTimer?: any;
+  pendingRetryArmed?: boolean;
 }
 
 export interface BaseAsyncTapOptions {
@@ -55,6 +56,7 @@ export abstract class BaseAsyncTap extends BaseTap {
   protected abstract getRequestKey(dest: GripContext): string | undefined;
   protected abstract buildRequest(dest: GripContext, signal: AbortSignal): Promise<unknown>;
   protected abstract mapResultToUpdates(dest: GripContext, result: unknown): Map<Grip<any>, any>;
+  protected abstract getResetUpdates(dest: GripContext): Map<Grip<any>, any>;
 
   // Hooked by BaseTap when destination params change
   produceOnDestParams(destContext: GripContext | undefined): void {
@@ -116,12 +118,27 @@ export abstract class BaseAsyncTap extends BaseTap {
   }
 
   private kickoff(dest: GripContext, forceRefetch?: boolean): void {
-    const key = this.getRequestKey(dest);
-    if (!key) return; // insufficient params
     const state = this.getDestState(dest);
+    const prevKey = state.key;
+    const key = this.getRequestKey(dest);
+
+    // If params are insufficient now → abort any in-flight and clear outputs
+    if (!key) {
+      if (state.controller) state.controller.abort();
+      state.key = undefined;
+      const resets = this.getResetUpdates(dest);
+      if (resets.size > 0) this.publish(resets, dest);
+      return;
+    }
+
+    // If the effective request key changed → abort previous request; keep last values until new ones arrive (stale-while-revalidate)
+    if (prevKey !== undefined && prevKey !== key) {
+      if (state.controller) state.controller.abort();
+    }
     const cached = (this.asyncOpts.cacheTtlMs > 0 && !forceRefetch) ? this.cache.get(key) : undefined;
     if (cached) {
       // Publish cached value to all destinations sharing this key
+      state.key = key;
       const destinations = Array.from(this.producer?.getDestinations().keys() ?? []);
       for (const destNode of destinations) {
         const dctx = destNode.get_context();
@@ -130,25 +147,41 @@ export abstract class BaseAsyncTap extends BaseTap {
         if (k2 !== key) continue;
         const updates = this.mapResultToUpdates(dctx, cached.value);
         this.publish(updates, dctx);
+        // Mark each destination's state with the effective key to prevent repeated resets
+        try { this.getDestState(dctx).key = key; } catch {}
       }
       return;
     }
     // If a request for this key is already in-flight, wait for it and then publish from cache
     const existing = this.pending.get(key);
     if (existing) {
+      // Arm a one-time retry for this destination if the pending completes without a cache entry
+      state.pendingRetryArmed = true;
       existing.then(() => {
         const fromCache = this.cache.get(key);
-        if (!fromCache) return; // nothing to publish
-        const destinations = Array.from(this.producer?.getDestinations().keys() ?? []);
-        for (const destNode of destinations) {
-          const dctx = destNode.get_context();
-          if (!dctx) continue;
-          const k2 = this.getRequestKey(dctx);
-          if (k2 !== key) continue;
-          const updates = this.mapResultToUpdates(dctx, fromCache.value);
-          this.publish(updates, dctx);
+        if (!fromCache) return; // publish handled below in finally
+      }).catch(() => { /* ignore; handled in finally */ }).finally(() => {
+        const fromCache = this.cache.get(key);
+        if (fromCache) {
+          // Publish cached value to all destinations
+          const destinations = Array.from(this.producer?.getDestinations().keys() ?? []);
+          for (const destNode of destinations) {
+            const dctx = destNode.get_context();
+            if (!dctx) continue;
+            const k2 = this.getRequestKey(dctx);
+            if (k2 !== key) continue;
+            const updates = this.mapResultToUpdates(dctx, fromCache.value);
+            this.publish(updates, dctx);
+            try { this.getDestState(dctx).key = key; } catch {}
+          }
+        } else if (state.pendingRetryArmed && this.pending.get(key) === undefined) {
+          // No cache was produced; if dest still targets this key, retry once
+          state.pendingRetryArmed = false;
+          if (this.getRequestKey(dest) === key) {
+            this.kickoff(dest, true);
+          }
         }
-      }).catch(() => {/* ignore */});
+      });
       return;
     }
     // Start new request
@@ -179,6 +212,7 @@ export abstract class BaseAsyncTap extends BaseTap {
           if (k2 !== key) continue;
           const updates = this.mapResultToUpdates(dctx, result);
           this.publish(updates, dctx);
+          try { this.getDestState(dctx).key = key; } catch {}
         }
       })
       .catch(() => {
@@ -214,6 +248,11 @@ class SingleOutputAsyncTap<T> extends BaseAsyncTap {
   protected mapResultToUpdates(_dest: GripContext, result: unknown): Map<Grip<any>, any> {
     const updates = new Map<Grip<any>, any>();
     updates.set(this.out as unknown as Grip<any>, result as T);
+    return updates;
+  }
+  protected getResetUpdates(_dest: GripContext): Map<Grip<any>, any> {
+    const updates = new Map<Grip<any>, any>();
+    updates.set(this.out as unknown as Grip<any>, undefined as unknown as T);
     return updates;
   }
 }
@@ -289,6 +328,14 @@ class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecor
     if (this.handleGrip) {
       updates.set(this.handleGrip as unknown as Grip<any>, this as unknown as FunctionTapHandle<StateRec>);
     }
+    return updates;
+  }
+  protected getResetUpdates(_dest: GripContext): Map<Grip<any>, any> {
+    const updates = new Map<Grip<any>, any>();
+    for (const g of this.outs) {
+      updates.set(g as unknown as Grip<any>, undefined);
+    }
+    // Do not touch handleGrip on reset
     return updates;
   }
   getState<K extends keyof StateRec>(grip: StateRec[K]): GripValue<StateRec[K]> | undefined {
