@@ -23,16 +23,24 @@ export interface GraphDumpNodeContext {
 	gcStatus?: "live" | "collected" | "unknown";
 }
 
+export interface GraphDumpTapDestinationDrip {
+	drip: string;
+	value?: unknown;
+}
+
+export interface GraphDumpTapDestination {
+	context: string;
+	destParameterDrips: Array<string | GraphDumpTapDestinationDrip>;
+	outputDrips: Array<string | GraphDumpTapDestinationDrip>;
+}
+
 export interface GraphDumpNodeTap {
 	key: string;
 	type: "Tap";
 	class: string;
 	providesGrips: string[];
 	publisherContext: string;
-	outgoingDrips: string[];
-	destinationContexts: string[];
-	incomingHomeParamDrips?: string[];
-	incomingDestParamDrips?: string[];
+	destinations: GraphDumpTapDestination[];
 	state?: Record<string, unknown>;
 }
 
@@ -42,8 +50,9 @@ export interface GraphDumpNodeDrip {
 	grip: string;
 	providerTap?: string;
 	destContext: string;
+	value?: unknown;
 	valuePreview?: unknown;
- 	subscriberCount?: number;
+	subscriberCount?: number;
 }
 
 export interface GraphDump {
@@ -59,6 +68,7 @@ export interface GraphDump {
 export interface GraphDumpOptions {
 	includeValues?: boolean;
 	maxValueLength?: number;
+	includeTapValues?: boolean; // include values inside tap destination drip lists
 }
 
 /**
@@ -113,6 +123,7 @@ export class GripGraphDumper {
 		this.opts = {
 			includeValues: args.opts?.includeValues ?? true,
 			maxValueLength: args.opts?.maxValueLength ?? 200,
+			includeTapValues: args.opts?.includeTapValues ?? false,
 		};
 	}
 
@@ -189,42 +200,47 @@ export class GripGraphDumper {
 		const providesGrips = (tap.provides ?? []).map((g) => this.describeGrip(g));
 		const publisherContext = this.keys.getContextKey(homeNode);
 
-		const outgoingDripKeys: string[] = [];
-		const destinationContexts: string[] = [];
-		const incomingDestParamDrips: string[] = [];
-		const incomingHomeParamDrips: string[] = [];
+		const destinations: GraphDumpTapDestination[] = [];
 
-		// Enumerate destinations and produced drips
 		for (const [destNode, destination] of rec.getDestinations()) {
-			destinationContexts.push(this.keys.getContextKey(destNode));
-			// Outgoing drips: per grip at this destination locate the consumer drip
+			const destContextKey = this.keys.getContextKey(destNode);
+			const destParamEntries: Array<string | GraphDumpTapDestinationDrip> = [];
+			const outputEntries: Array<string | GraphDumpTapDestinationDrip> = [];
+
+			// Destination parameter drips
+			for (const pg of tap.destinationParamGrips ?? []) {
+				const wr = destNode.get_consumers().get(pg as unknown as Grip<any>);
+				const d = wr?.deref();
+				if (!d) continue;
+				const dripKey = this.keys.getDripKey(d);
+				if (this.opts.includeTapValues) {
+					const valPrev = this.opts.includeValues ? this.previewValue(d.get()) : undefined;
+					destParamEntries.push({ drip: dripKey, value: valPrev });
+				} else {
+					destParamEntries.push(dripKey);
+				}
+			}
+
+			// Output drips for this destination (grips being delivered)
 			for (const g of destination.getGrips()) {
 				const wr = destNode.get_consumers().get(g as unknown as Grip<any>);
 				const d = wr?.deref();
 				if (!d) continue;
-				outgoingDripKeys.push(this.keys.getDripKey(d));
+				const dripKey = this.keys.getDripKey(d);
+				if (this.opts.includeTapValues) {
+					const valPrev = this.opts.includeValues ? this.previewValue(d.get()) : undefined;
+					outputEntries.push({ drip: dripKey, value: valPrev });
+				} else {
+					outputEntries.push(dripKey);
+				}
+				// Ensure drips list captures this consumer drip once
 				if (!seenDrips.has(d)) {
 					dripsOut.push(this.buildDripNode(destNode, g as Grip<any>, d));
 					seenDrips.add(d);
 				}
 			}
-			// Incoming destination parameter drips (if param grips are declared)
-			const paramGrips = tap.destinationParamGrips ?? [];
-			for (const pg of paramGrips) {
-				const wrp = destNode.get_consumers().get(pg as unknown as Grip<any>);
-				const pd = wrp?.deref();
-				if (!pd) continue;
-				incomingDestParamDrips.push(this.keys.getDripKey(pd));
-			}
-		}
 
-		// Home parameter drips (best-effort: look at homeNode consumers for declared grips)
-		const homeParamGrips = tap.homeParamGrips ?? [];
-		for (const hg of homeParamGrips) {
-			const wrh = homeNode.get_consumers().get(hg as unknown as Grip<any>);
-			const hd = wrh?.deref();
-			if (!hd) continue;
-			incomingHomeParamDrips.push(this.keys.getDripKey(hd));
+			destinations.push({ context: destContextKey, destParameterDrips: destParamEntries, outputDrips: outputEntries });
 		}
 
 		const state = this.extractTapState(tap);
@@ -234,10 +250,7 @@ export class GripGraphDumper {
 			class: className,
 			providesGrips,
 			publisherContext,
-			outgoingDrips: outgoingDripKeys,
-			destinationContexts,
-			incomingHomeParamDrips: incomingHomeParamDrips.length ? incomingHomeParamDrips : undefined,
-			incomingDestParamDrips: incomingDestParamDrips.length ? incomingDestParamDrips : undefined,
+			destinations,
 			state,
 		};
 	}
@@ -259,7 +272,8 @@ export class GripGraphDumper {
 		const key = this.keys.getDripKey(drip);
 		const destContext = this.keys.getContextKey(destNode);
 		const providerTapKey = this.findProviderTapKey(destNode, grip);
-		const valuePreview = this.opts.includeValues ? this.previewValue(drip.get()) : undefined;
+		const rawValue = this.opts.includeValues ? drip.get() : undefined;
+		const valuePreview = this.opts.includeValues ? this.previewValue(rawValue) : undefined;
 		const subscriberCount = this.countSubscribers(drip);
 		return {
 			key,
@@ -267,6 +281,7 @@ export class GripGraphDumper {
 			grip: this.describeGrip(grip),
 			providerTap: providerTapKey,
 			destContext,
+			value: valuePreview,
 			valuePreview,
 			subscriberCount,
 		};

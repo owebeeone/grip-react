@@ -11,12 +11,13 @@ export function GraphDumpDialog(props: {
 }) {
 	const { open, onClose, grok, keys } = props;
 	const [copied, setCopied] = useState(false);
-	const [includeValues, setIncludeValues] = useState(false);
+	const [includeValues, setIncludeValues] = useState(true);
+	const [includeTapValues, setIncludeTapValues] = useState(false);
 	const dump: GraphDump | null = useMemo(() => {
 		if (!open) return null;
-		const dumper = new GripGraphDumper({ grok, keys, opts: { includeValues } });
+		const dumper = new GripGraphDumper({ grok, keys, opts: { includeValues, includeTapValues } });
 		return dumper.dump();
-	}, [open, grok, keys, includeValues]);
+	}, [open, grok, keys, includeValues, includeTapValues]);
 
 	if (!open) return null;
 
@@ -29,13 +30,17 @@ export function GraphDumpDialog(props: {
 					<strong>Grip Graph Dump</strong>
 					<button onClick={onClose} aria-label="Close">Dismiss</button>
 				</div>
-				<div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+				<div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6, flexWrap: 'wrap' }}>
 					<div style={{ fontSize: 12, color: "#555" }}>
 						Timestamp: {(dump && dump.timestampIso) || new Date().toISOString()}
 					</div>
 					<label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
 						<input type="checkbox" checked={includeValues} onChange={(e) => setIncludeValues(e.target.checked)} />
-						Include values
+						Include drip values
+					</label>
+					<label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+						<input type="checkbox" checked={includeTapValues} onChange={(e) => setIncludeTapValues(e.target.checked)} />
+						Include tap destination values
 					</label>
 				</div>
 				<div style={contentStyle}>

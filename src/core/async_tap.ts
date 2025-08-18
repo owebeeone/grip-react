@@ -29,6 +29,7 @@ export abstract class BaseAsyncTap extends BaseTap {
   protected readonly asyncOpts: Required<BaseAsyncTapOptions>;
   private readonly destState = new WeakMap<GripContext, DestState>();
   private readonly cache: AsyncCache<string, unknown>;
+  private readonly pending = new Map<string, Promise<unknown>>();
   private readonly allControllers = new Set<AbortController>();
   private readonly allTimers = new Set<any>();
 
@@ -62,16 +63,16 @@ export abstract class BaseAsyncTap extends BaseTap {
   }
 
   // Recompute for all destinations or a specific one
-  produce(opts?: { destContext?: GripContext }): void {
+  produce(opts?: { destContext?: GripContext; forceRefetch?: boolean }): void {
     if (opts?.destContext) {
-      this.kickoff(opts.destContext);
+      this.kickoff(opts.destContext, opts.forceRefetch === true);
       return;
     }
     const destinations = Array.from(this.producer?.getDestinations().keys() ?? []);
     for (const destNode of destinations) {
       const destCtx = destNode.get_context();
       if (!destCtx) continue;
-      this.kickoff(destCtx);
+      this.kickoff(destCtx, opts?.forceRefetch === true);
     }
   }
 
@@ -114,14 +115,40 @@ export abstract class BaseAsyncTap extends BaseTap {
     }
   }
 
-  private kickoff(dest: GripContext): void {
+  private kickoff(dest: GripContext, forceRefetch?: boolean): void {
     const key = this.getRequestKey(dest);
     if (!key) return; // insufficient params
     const state = this.getDestState(dest);
-    const cached = this.asyncOpts.cacheTtlMs > 0 ? this.cache.get(key) : undefined;
+    const cached = (this.asyncOpts.cacheTtlMs > 0 && !forceRefetch) ? this.cache.get(key) : undefined;
     if (cached) {
-      const updates = this.mapResultToUpdates(dest, cached.value);
-      this.publish(updates, dest);
+      // Publish cached value to all destinations sharing this key
+      const destinations = Array.from(this.producer?.getDestinations().keys() ?? []);
+      for (const destNode of destinations) {
+        const dctx = destNode.get_context();
+        if (!dctx) continue;
+        const k2 = this.getRequestKey(dctx);
+        if (k2 !== key) continue;
+        const updates = this.mapResultToUpdates(dctx, cached.value);
+        this.publish(updates, dctx);
+      }
+      return;
+    }
+    // If a request for this key is already in-flight, wait for it and then publish from cache
+    const existing = this.pending.get(key);
+    if (existing) {
+      existing.then(() => {
+        const fromCache = this.cache.get(key);
+        if (!fromCache) return; // nothing to publish
+        const destinations = Array.from(this.producer?.getDestinations().keys() ?? []);
+        for (const destNode of destinations) {
+          const dctx = destNode.get_context();
+          if (!dctx) continue;
+          const k2 = this.getRequestKey(dctx);
+          if (k2 !== key) continue;
+          const updates = this.mapResultToUpdates(dctx, fromCache.value);
+          this.publish(updates, dctx);
+        }
+      }).catch(() => {/* ignore */});
       return;
     }
     // Start new request
@@ -137,22 +164,31 @@ export abstract class BaseAsyncTap extends BaseTap {
       state.deadlineTimer = setTimeout(() => controller.abort(), this.asyncOpts.deadlineMs);
       this.allTimers.add(state.deadlineTimer);
     }
-
-    this.buildRequest(dest, controller.signal)
+    const promise = this.buildRequest(dest, controller.signal)
       .then(result => {
         if (controller.signal.aborted) return;
         // Latest-only guard
         if (this.asyncOpts.latestOnly && seq !== state.seq) return;
         if (this.asyncOpts.cacheTtlMs > 0 && key) this.cache.set(key, result, this.asyncOpts.cacheTtlMs);
-        const updates = this.mapResultToUpdates(dest, result);
-        this.publish(updates, dest);
+        // Publish to all destinations sharing this key to keep outputs in sync
+        const destinations = Array.from(this.producer?.getDestinations().keys() ?? []);
+        for (const destNode of destinations) {
+          const dctx = destNode.get_context();
+          if (!dctx) continue;
+          const k2 = this.getRequestKey(dctx);
+          if (k2 !== key) continue;
+          const updates = this.mapResultToUpdates(dctx, result);
+          this.publish(updates, dctx);
+        }
       })
       .catch(() => {
         // Swallow network errors; optionally map to diagnostics in subclass
       })
       .finally(() => {
+        this.pending.delete(key);
         if (state.deadlineTimer) { clearTimeout(state.deadlineTimer); this.allTimers.delete(state.deadlineTimer); state.deadlineTimer = undefined; }
       });
+    this.pending.set(key, promise);
   }
 }
 
