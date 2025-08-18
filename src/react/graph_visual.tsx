@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Grok } from "../core/grok";
+import { GraphDumpKeyRegistry } from "../core/graph_dump";
 import type { GripContextNode } from "../core/graph";
 import type { Grip } from "../core/grip";
 import type { Drip } from "../core/drip";
@@ -19,10 +20,12 @@ export type GripGraphVisualizerProps = {
   style?: React.CSSProperties;
   // A simple counter. Increment to force a refresh.
   refreshTrigger?: number;
+  keys?: GraphDumpKeyRegistry; // shared registry for stable kXXX ids
 };
 
 type VisualNode = {
   id: string;
+  display_id: string;
   node: GripContextNode;
   live: boolean;
   layer: number;
@@ -109,7 +112,8 @@ function buildVisual(
   showUnresolvedConsumers: boolean,
   viewportWidth: number,
   viewportHeight: number,
-  fitToPane: boolean
+  fitToPane: boolean,
+  keys: GraphDumpKeyRegistry
 ): { nodes: VisualNode[]; parentEdges: ParentEdge[]; providerEdges: ProviderEdge[]; canvas: { width: number; height: number } } {
   const graph = grok.getGraph();
   const layerMap = computeLayers(graph);
@@ -122,7 +126,8 @@ function buildVisual(
     const l = layerMap.get(id) ?? 0;
     maxLayer = Math.max(maxLayer, l);
     const vn: VisualNode = {
-      id,
+      id: keys.getContextKey(node),
+      display_id: `${keys.getContextKey(node)} ${node.id}`,
       node,
       live,
       layer: l,
@@ -175,7 +180,7 @@ function buildVisual(
   const parentEdges: ParentEdge[] = [];
   for (const vn of Array.from(layers.values()).flat()) {
     for (const p of vn.node.get_parent_nodes()) {
-      parentEdges.push({ kind: "parent", id: `parent:${vn.id}->${p.id}`, from: vn.id, to: p.id });
+      parentEdges.push({ kind: "parent", id: `parent:${vn.id}->${keys.getContextKey(p)}`, from: vn.id, to: keys.getContextKey(p) });
     }
   }
 
@@ -191,7 +196,7 @@ function buildVisual(
           const val = destCtx._getContextNode().getLiveDripForGrip(g as any)?.get();
           return { grip: g, value: val };
         });
-        providerEdges.push({ kind: "provider", id: `prov:${vn.id}->${destNode.id}:${providerEdges.length}`, from: vn.id, to: destNode.id, grips });
+        providerEdges.push({ kind: "provider", id: `prov:${vn.id}->${keys.getContextKey(destNode)}:${providerEdges.length}`, from: vn.id, to: keys.getContextKey(destNode), grips });
       }
     }
   }
@@ -200,7 +205,7 @@ function buildVisual(
 }
 
 export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
-  const { grok, refreshMs = 500, showDestinationParams = false, showResolvedProviders = true, showUnresolvedConsumers = true, showReapedContexts = true, pause = false, fitToPane = false, className, style, refreshTrigger = 0 } = props;
+  const { grok, refreshMs = 500, showDestinationParams = false, showResolvedProviders = true, showUnresolvedConsumers = true, showReapedContexts = true, pause = false, fitToPane = false, className, style, refreshTrigger = 0, keys = new GraphDumpKeyRegistry() } = props;
 
   const [nodes, setNodes] = useState<VisualNode[]>([]);
   const [parentEdges, setParentEdges] = useState<ParentEdge[]>([]);
@@ -219,7 +224,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     }
     function tick() {
       const { w, h } = measureViewport();
-      const { nodes, parentEdges, providerEdges, canvas } = buildVisual(grok, showResolvedProviders, showUnresolvedConsumers, w, h, fitToPane);
+      const { nodes, parentEdges, providerEdges, canvas } = buildVisual(grok, showResolvedProviders, showUnresolvedConsumers, w, h, fitToPane, keys);
       if (cancelled) return;
       setNodes(nodes);
       setParentEdges(parentEdges);
@@ -249,7 +254,9 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
   };
 
   const nodeCard = (vn: VisualNode) => {
-    const headerBg = vn.live ? "#1e88e5" : "#9e9e9e";
+    // Flag contexts with sanity issues in red
+    const hasIssues = (vn.node as any)._sanityIssues?.length > 0;
+    const headerBg = hasIssues ? "#c62828" : (vn.live ? "#1e88e5" : "#9e9e9e");
     const cardOpacity = !vn.live && showReapedContexts ? 0.6 : vn.live ? 1 : showReapedContexts ? 0.6 : 0; // hide reaped if not showing
     if (!vn.live && !showReapedContexts) return null;
     const consumers = vn.consumers
@@ -259,7 +266,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     return (
       <div key={vn.id} style={{ position: "absolute", left: vn.x, top: vn.y, width: vn.width, height: vn.height, border: "1px solid #ddd", borderRadius: 8, background: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", opacity: cardOpacity }}>
         <div style={{ background: headerBg, color: "#fff", padding: "6px 10px", borderTopLeftRadius: 8, borderTopRightRadius: 8, fontSize: 13, display: "flex", justifyContent: "space-between" }}>
-          <div title={vn.id} style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: vn.width - 90 }}>{vn.id}</div>
+          <div title={vn.display_id} style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: vn.width - 90 }}>{vn.display_id}{hasIssues ? " · Drip unsubscribe failed" : ""}</div>
           <div style={{ fontSize: 12, opacity: 0.9 }}>{producersCount} taps · {vn.consumers.length} drips</div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: 10, fontSize: 12 }}>

@@ -3,7 +3,8 @@ import { Grip } from "./grip";
 import { Drip } from "./drip";
 import type { Tap } from "./tap";
 import { GripContext } from "./context";
-import { GripContextNode, ProducerRecord } from "./graph";
+import { GripContextNode, ProducerRecord }
+from "./graph";import { GripGraphSanityChecker } from "./sanity_checker";
 
 export interface GraphDumpSummary {
 	contextCount: number;
@@ -21,6 +22,7 @@ export interface GraphDumpNodeContext {
 	taps: string[];
 	metadata?: Record<string, unknown>;
 	gcStatus?: "live" | "collected" | "unknown";
+	sanity?: { issues: string[] };
 }
 
 export interface GraphDumpTapDestinationDrip {
@@ -132,6 +134,7 @@ export class GripGraphDumper {
 		const contexts: GraphDumpNodeContext[] = [];
 		const taps: GraphDumpNodeTap[] = [];
 		const drips: GraphDumpNodeDrip[] = [];
+		const checker = new GripGraphSanityChecker(this.grok);
 
 		// Dedup containers
 		const seenTaps = new Set<Tap>();
@@ -140,7 +143,10 @@ export class GripGraphDumper {
 		// Iterate graph snapshot
 		const graph = this.grok.getGraph();
 		for (const node of graph.values()) {
-			contexts.push(this.buildContextNode(node));
+			const ctxNode = this.buildContextNode(node);
+			const msg = checker.reportContext(node);
+			if (msg) ctxNode.sanity = { issues: [msg] };
+			contexts.push(ctxNode);
 			// Collect taps attached at this context
 			for (const [tap, rec] of node.producerByTap) {
 				if (!seenTaps.has(tap)) {

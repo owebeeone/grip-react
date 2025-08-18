@@ -61,6 +61,9 @@ export abstract class BaseAsyncTap extends BaseTap {
   // Hooked by BaseTap when destination params change
   produceOnDestParams(destContext: GripContext | undefined): void {
     if (!destContext) return;
+    // Only kickoff when requestKey is resolvable (dest params defined)
+    const key = this.getRequestKey(destContext);
+    if (!key) return;
     this.kickoff(destContext);
   }
 

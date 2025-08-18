@@ -151,20 +151,17 @@ export class Destination {
     const self = this;
     for (const grip of this.tap.destinationParamGrips) {
       const drip = this.destContextNode.getOrCreateConsumer(grip);
-      const destCtx = this.destContextNode.get_context();
-      if (destCtx) {
-        // Ensure the parameter consumer is resolved to a provider
-        destCtx.getGrok().resolver.addConsumer(destCtx, grip);
-      }
+      // Do not force-resolve the param consumer to a provider here.
+      // Recording the consumer is enough for provider publishes to reach it.
       this.destinationParamDrips.set(grip, drip);
-      this.destinationDripsSubs.set(grip, drip.subscribePriority((v) => {
+      this.destinationDripsSubs.set(grip, drip.subscribePriority((_v) => {
         // The produceOnDestParams should exist, let's throw if it doesn't.
-        self.tap.produceOnDestParams!(this.destContextNode.get_context(), grip);
+        // Only trigger if there is an actual value change to a defined value
+        if (drip.get() !== undefined) {
+          self.tap.produceOnDestParams!(this.destContextNode.get_context(), grip);
+        }
       }));
-      // Kick an initial evaluation using current param values so async taps can start immediately
-      if (self.tap.produceOnDestParams) {
-        self.tap.produceOnDestParams(this.destContextNode.get_context(), grip);
-      }
+      // Do not kick initial evaluation on undefined to avoid creating producer links preemptively
     }
   }
 
@@ -228,6 +225,13 @@ export class Destination {
    */
   getGrips(): ReadonlySet<Grip<any>> {
     return this.grips;
+  }
+
+  /**
+   * Read-only access to destination parameter drips map for analysis.
+   */
+  getDestinationParamDrips(): ReadonlyMap<Grip<any>, Drip<any>> {
+    return this.destinationParamDrips;
   }
 
   getContext(): GripContext | undefined { 
