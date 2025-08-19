@@ -11,8 +11,6 @@ type Override = { type: "value"; value: unknown } | { type: "drip"; drip: Drip<a
 
 export class GripContext {
   private grok: Grok;
-  // Keep hard references to parents.
-  private parents: Array<{ ctx: GripContext; priority: number }> = [];
   private contextNode: GripContextNode;
   readonly id: string;
   private handleHolder = new TaskHandleHolder();
@@ -34,7 +32,7 @@ export class GripContext {
 
   isRoot(): boolean {
     // Root is the context that has no parents.
-    return this.parents.length === 0;
+    return this.contextNode.get_parent_nodes().length === 0;
   }
 
   submitTask(callback: () => void, priority = 0): void {
@@ -47,25 +45,26 @@ export class GripContext {
 
   // Expose a shallow copy of parents (for graph building / debug)
   getParents(): ReadonlyArray<{ ctx: GripContext; priority: number }> {
-    return this.parents.slice();
+    // Guard against contextNode not being initialized yet
+    if (!this.contextNode) {
+      return [];
+    }
+    return this.contextNode.get_parents_with_priority().map(p => ({
+      ctx: p.node.get_context()!,
+      priority: p.priority
+    })).filter(p => p.ctx != null);
   }
 
   addParent(parent: GripContext, priority = 0): this {
     if (parent.contextNode.grok !== this.grok) throw new Error("Contexts must be attached to the same engine");
     if (parent === this) throw new Error("Context cannot be its own parent");
 
-    const parent_ref = { ctx: parent, priority };
-    this.parents.push(parent_ref);
-    this.parents.sort((a, b) => a.priority - b.priority);
-
-    // Ensure the corresponding GripContextNode also registers the parent
-    this.contextNode.addParent(parent.contextNode);
+    // All parent management is now done in GripContextNode
+    this.contextNode.addParent(parent.contextNode, priority);
 
     if (this.grok.hasCycle(this.contextNode)) {
-      // Remmove the node we just added so bad things don't happen if we continue.
-      this.parents = this.parents.filter(p => p !== parent_ref);
-      // Also remove the node-level parent relationship if cycle is detected
-      // Note: A corresponding removeParent method on GripContextNode would be ideal here
+      // Remove the node we just added so bad things don't happen if we continue.
+      this.contextNode.removeParent(parent.contextNode);
       throw new Error("Cycle detected in context DAG");
     }
 
@@ -73,18 +72,18 @@ export class GripContext {
   }
 
   unlinkParent(parent: GripContext): this {
-    const idx = this.parents.findIndex(p => p.ctx === parent);
-    if (idx !== -1) {
-      const [removed] = this.parents.splice(idx, 1);
-      // Update the node graph linkage as well
-      this.contextNode.removeParent(this._getContextNode());
+    // All parent management is now done in GripContextNode
+    try {
+      this.contextNode.removeParent(parent.contextNode);
+    } catch (e) {
+      // Parent not found - ignore
     }
     return this;
   }
 
   private hasAncestor(target: GripContext): boolean {
-    return this.parents.some(
-      p => p.ctx === target || p.ctx.hasAncestor(target)
+    return this.contextNode.get_parent_nodes().some(
+      p => p.get_context() === target || p.get_context()?.hasAncestor(target) || false
     );
   }
 
@@ -126,6 +125,10 @@ export class GripContext {
   }
 
   _getContextNode() {
+    return this.contextNode;
+  }
+
+  getContextNode() {
     return this.contextNode;
   }
 }

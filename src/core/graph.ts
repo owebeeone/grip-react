@@ -270,7 +270,7 @@ export class GripContextNode implements GripContextNodeIf {
   readonly grok: Grok;
   readonly id: string;
   readonly contextRef: WeakRef<GripContext>;
-  readonly parents: GripContextNode[] = [];
+  readonly parents: Array<{ node: GripContextNode; priority: number }> = [];
   readonly children: GripContextNode[] = [];
   readonly handleHolder = new TaskHandleHolder();
 
@@ -308,7 +308,11 @@ export class GripContextNode implements GripContextNodeIf {
   }
 
   get_parent_nodes(): GripContextNode[] {
-    return this.parents;
+    return this.parents.map(p => p.node);
+  }
+
+  get_parents_with_priority(): ReadonlyArray<{ node: GripContextNode; priority: number }> {
+    return this.parents.slice();
   }
 
   get_producers(): Map<Grip<any>, ProducerRecord> {
@@ -323,29 +327,22 @@ export class GripContextNode implements GripContextNodeIf {
     return this.children;
   }
 
-  addParent(parent: GripContextNode): void {
-    if (!this.parents.includes(parent)) {
-      this.parents.push(parent);
+  addParent(parent: GripContextNode, priority: number = 0): void {
+    const existing = this.parents.find(p => p.node === parent);
+    if (!existing) {
+      this.parents.push({ node: parent, priority });
+      // Sort by priority (lower priority values come first)
+      this.parents.sort((a, b) => a.priority - b.priority);
       parent.children.push(this);
     }
   }
 
   removeParent(parent: GripContextNode): void {
-    // Make sure that this is a parent.
-    if (!this.parents.includes(parent)) {
+    const idx = this.parents.findIndex(p => p.node === parent);
+    if (idx === -1) {
       throw new Error(`Parent ${parent.id} is not a parent of ${this.id}`);
     }
-    this.get_context()?.unlinkParent(parent.get_context()!);
-    const parentCtx = parent.get_context();
-    if (parentCtx) {
-      // This should also remove the parent from this.
-      parentCtx.unlinkParent(this.get_context()!);
-    } else {
-      const idx = this.parents.indexOf(parent);
-      if (idx !== -1) {
-        this.parents.splice(idx, 1);
-      }
-    }
+    this.parents.splice(idx, 1);
 
     const cidx = parent.children.indexOf(this);
     if (cidx !== -1) {
@@ -512,9 +509,9 @@ export class GrokGraph {
       this.nodes.set(ctx.id, node);
       //console.log(`GrokGraph: Created new node for context: ${ctx.id}`);
       // Connect parents hard
-      for (const { ctx: parentCtx } of ctx.getParents()) {
+      for (const { ctx: parentCtx, priority } of ctx.getParents()) {
         const parentNode = this.ensureNode(parentCtx);
-        node.addParent(parentNode);
+        node.addParent(parentNode, priority);
       }
       this.startGcIfNeeded();
     } else {
@@ -537,24 +534,40 @@ export class GrokGraph {
   }
 
   snapshotSanityCheck(): {nodes: ReadonlyMap<string, GripContextNode>, missingNodes: ReadonlySet<GripContextNode>} {
-      const allNodes = new Map<string, GripContextNode>();
+    const allNodes = new Map<string, GripContextNode>();
     const nodesToCheck = [...this.nodes.values()];
     const missingNodes = new Set<GripContextNode>();
+    
     while (nodesToCheck.length > 0) {
       const node = nodesToCheck.pop();
       if (allNodes.has(node!.id)) continue;
       allNodes.set(node!.id, node!);
+      
+      // Check children and clean up stale references
+      const validChildren: GripContextNode[] = [];
       node!.children.forEach((child) => {
-        if (!allNodes.has(child.id) && !this.nodes.has(child.id) && !missingNodes.has(child)) {
-          nodesToCheck.push(child);
+        if (!allNodes.has(child.id) && !this.nodes.has(child.id)) {
+          // This child is not in the main nodes map - it's orphaned
           missingNodes.add(child);
+          // Don't add to nodesToCheck since it's not in the main graph
+        } else {
+          validChildren.push(child);
+          if (!allNodes.has(child.id)) {
+            nodesToCheck.push(child);
+          }
         }
       });
+      
+      // Clean up stale children references
+      if (validChildren.length !== node!.children.length) {
+        node!.children.length = 0;
+        node!.children.push(...validChildren);
+      }
     }
 
     if (missingNodes.size > 0) {
       console.log(
-        `GrokGraph: snapshotSanityCheck: missing node ids: ${Array.from(missingNodes).map(n => n.id).join(", ")}`);
+        `GrokGraph: snapshotSanityCheck: found ${missingNodes.size} orphaned nodes: ${Array.from(missingNodes).map(n => n.id).join(", ")}`);
     }
     return {nodes: allNodes, missingNodes: missingNodes};
   }
@@ -579,6 +592,9 @@ export class GrokGraph {
 
   private gcSweep() {
     const now = Date.now();
+    const nodesToDelete = new Set<string>();
+    
+    // First pass: identify nodes to delete
     for (const [id, node] of this.nodes) {
       const ctx = node.contextRef.deref();
       const contextGone = !ctx;
@@ -587,10 +603,27 @@ export class GrokGraph {
       const noConsumers = count === 0;
 
       if (contextGone && (noConsumers || idleTooLong)) {
-        if (!noConsumers) {
-          this.clearContextNode(node);
-        }
+        nodesToDelete.add(id);
+      }
+    }
+    
+    // Second pass: clean up nodes and their relationships
+    for (const id of nodesToDelete) {
+      const node = this.nodes.get(id);
+      if (node) {
+        this.clearContextNode(node);
         this.nodes.delete(id);
+      }
+    }
+    
+    // Third pass: clean up any stale child references in remaining nodes
+    for (const [id, node] of this.nodes) {
+      const validChildren = node.children.filter(child => 
+        this.nodes.has(child.id)
+      );
+      if (validChildren.length !== node.children.length) {
+        node.children.length = 0;
+        node.children.push(...validChildren);
       }
     }
   }
@@ -602,10 +635,28 @@ export class GrokGraph {
     }
     node.consumers.clear();
 
-    // Remove from parents.
-    for (const parent of node.parents) {
-      node.removeParent(parent);
+    // Remove this node from its parents' children arrays
+    for (const parentRef of node.parents.slice()) {
+      node.removeParent(parentRef.node);
     }
+
+    // Remove this node from its children's parent arrays
+    for (const child of node.children.slice()) {
+      try {
+        child.removeParent(node);
+      } catch (e) {
+        // Child might not have this as parent if relationship was already broken
+        // Just remove from children array
+        const idx = node.children.indexOf(child);
+        if (idx !== -1) {
+          node.children.splice(idx, 1);
+        }
+      }
+    }
+    
+    // Clear the arrays to avoid holding references
+    node.parents.length = 0;
+    node.children.length = 0;
   }
 
   private countLiveConsumers(node: GripContextNode): number {

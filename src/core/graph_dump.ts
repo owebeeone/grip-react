@@ -188,7 +188,7 @@ export class GripGraphDumper {
 		const taps = Array.from(node.producerByTap.keys()).map((t) => this.keys.getTapKey(t));
 		const isRoot = node.get_parent_nodes().length === 0;
 		const parents = node.get_context()?.getParents().map((p) => 
-			({ ctx: this.keys.getContextKey(p.ctx.getContextNode()), priority: p.priority }));
+			({ ctx: this.keys.getContextKey(p.ctx._getContextNode()), priority: p.priority }));
 
 		const consumerDrips: string[] = [];
 		for (const [, wr] of node.get_consumers()) {

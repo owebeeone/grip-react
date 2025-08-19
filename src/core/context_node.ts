@@ -25,12 +25,13 @@ export interface GripContextNodeIf {
     get_grok(): Grok;
     get_context(): GripContext | undefined;  // undefined may mean the context has been GC'd
     get_parent_nodes(): GripContextNode[];
+    get_parents_with_priority(): ReadonlyArray<{ node: GripContextNode; priority: number }>;
     get_children_nodes(): GripContextNode[];
     get_producers(): Map<Grip<any>, ProducerRecord>;
     get_consumers(): Map<Grip<any>, WeakRef<Drip<any>>>;
     getResolvedProviders(): Map<Grip<any>, GripContextNode>;
 
-    addParent(parent: GripContextNode): void;
+    addParent(parent: GripContextNode, priority?: number): void;
 
     recordProducer<T>(grip: Grip<T>, rec: ProducerRecord): void;
 
