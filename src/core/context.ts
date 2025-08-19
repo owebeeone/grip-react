@@ -24,6 +24,10 @@ export class GripContext {
     this.contextNode = engine.ensureNode(this);
   }
 
+  getNode(): GripContextNode {
+    return this.contextNode;
+  }
+
   getGrok(): Grok {
     return this.grok;
   }
@@ -73,7 +77,7 @@ export class GripContext {
     if (idx !== -1) {
       const [removed] = this.parents.splice(idx, 1);
       // Update the node graph linkage as well
-      this.contextNode.removeParent(parent._getContextNode());
+      this.contextNode.removeParent(this._getContextNode());
     }
     return this;
   }

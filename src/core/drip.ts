@@ -10,7 +10,7 @@ export type Unsubscribe = () => void;
  * This is what is returned by the useGrip hook in react.
  */
 export class Drip<T> {
-  readonly context: GripContext; // Drips keep context alive.
+  private context: GripContext | null = null; // Drips keep context alive.
   private value: T | undefined;
   private subs = new Set<(v: T | undefined) => void>();
   // TODO: Switch to using a higher priority task instead of immediate subscribers.
@@ -55,7 +55,7 @@ export class Drip<T> {
     if (!this.enqueued) {
       this.enqueued = true;
       const self = this;
-      this.context.submitWeakTask(() => self.taskQueueCallback());
+      this.context?.submitWeakTask(() => self.taskQueueCallback());
     }
   }
 
@@ -89,7 +89,7 @@ export class Drip<T> {
         if (!this.hasSubscribers() && !this.zeroCheckScheduled) {
           this.zeroCheckScheduled = true;
           const self = this;
-          this.context.submitWeakTask(() => {
+          this.context?.submitWeakTask(() => {
             self.zeroCheckScheduled = false;
             if (!self.hasSubscribers()) {
               self.zeroSubCallbacks.forEach(cb => cb());
@@ -116,12 +116,21 @@ export class Drip<T> {
     this.zeroSubCallbacks.add(fn);
   }
 
+  unsubscribeAll(): void {
+    if (this.hasSubscribers()) {
+      this.subs.clear();
+      this.immediateSubs.clear();
+      this.zeroSubCallbacks.forEach(cb => cb());
+    }
+    this.context = null;
+  }
+
   // Intended for internal use by managed unsubscribe wrappers
   _notifyUnsubscribed(): void {
     if (this.subs.size === 0 && !this.zeroCheckScheduled) {
       this.zeroCheckScheduled = true;
       const self = this;
-      this.context.submitWeakTask(() => {
+      this.context?.submitWeakTask(() => {
         self.zeroCheckScheduled = false;
         if (!self.hasSubscribers()) {
           self.zeroSubCallbacks.forEach(cb => cb());

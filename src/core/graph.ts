@@ -40,7 +40,13 @@ export class ProducerRecord {
   }
 
   removeDestinationForContext(destCtx: GripContextNode): void {
+    const destination = this.destinations.get(destCtx);
+    if (destination) {
+      destination.unsubscribeAllDestinationParams();
+    }
+
     this.destinations.delete(destCtx);
+
     if (this.destinations.size === 0) {
       // Only detach if the tap's home context still exists and there are truly no destinations
       const homeCtx = this.tap.getHomeContext?.();
@@ -169,12 +175,16 @@ export class Destination {
    * Unregister for destination params.
    */
   unregisterDestination() {
+    this.producer.removeDestinationForContext(this.destContextNode);
+  }
+
+  
+  unsubscribeAllDestinationParams(): void {
     for (const [grip, sub] of this.destinationDripsSubs) {
       sub();
     }
     this.destinationDripsSubs.clear();
     this.destinationParamDrips.clear();
-    this.producer.removeDestinationForContext(this.destContextNode);
   }
 
   /**
@@ -206,17 +216,30 @@ export class Destination {
       this.registerDestinationParamDrips();
     }
     this.grips.add(g); 
+    this.sanityCheck();
   }
 
   /**
    * Removes a destination grip for this destination.
    */
   removeGrip(g: Grip<any>) {
-    if (!this.grips.has(g)) return;
-    this.grips.delete(g); 
+    try {
+      if (!this.grips.has(g)) return;
+      this.grips.delete(g); 
+      if (this.grips.size === 0) {
+        // Unregister for destination params if this is the last destination grip removed.
+          this.unregisterDestination();
+      }
+    } finally {
+      this.sanityCheck();
+    }
+  }
+
+  sanityCheck(): void {
     if (this.grips.size === 0) {
-      // Unregister for destination params if this is the last destination grip removed.
-      this.unregisterDestination();
+      if (this.destinationParamDrips.size > 0) {
+        throw new Error("Destination has destination param drips but no output grips");
+      }
     }
   }
 
@@ -308,10 +331,22 @@ export class GripContextNode implements GripContextNodeIf {
   }
 
   removeParent(parent: GripContextNode): void {
-    const idx = this.parents.indexOf(parent);
-    if (idx !== -1) {
-      this.parents.splice(idx, 1);
+    // Make sure that this is a parent.
+    if (!this.parents.includes(parent)) {
+      throw new Error(`Parent ${parent.id} is not a parent of ${this.id}`);
     }
+    this.get_context()?.unlinkParent(parent.get_context()!);
+    const parentCtx = parent.get_context();
+    if (parentCtx) {
+      // This should also remove the parent from this.
+      parentCtx.unlinkParent(this.get_context()!);
+    } else {
+      const idx = this.parents.indexOf(parent);
+      if (idx !== -1) {
+        this.parents.splice(idx, 1);
+      }
+    }
+
     const cidx = parent.children.indexOf(this);
     if (cidx !== -1) {
       parent.children.splice(cidx, 1);
@@ -409,6 +444,27 @@ export class GripContextNode implements GripContextNodeIf {
     }
   }
 
+  /**
+   * Remove any dangling drips from this context node.
+   * @returns The number of drips remaining.
+   */
+  purgeDanglingDrips(): number {
+    const toRemove = new Set<Grip<any>>();
+    var count = 0;
+    for (const [grip, wr] of this.consumers) {
+      const d = wr.deref();
+      if (!d) {
+        toRemove.add(grip);
+      } else {
+        count += 1;
+      }
+    }
+    for (const grip of toRemove) {
+      this.removeConsumerForGrip(grip);
+    }
+    return count;
+  }
+
   touch(): void { this.lastSeen = Date.now(); }
   getLastSeen(): number { return this.lastSeen; }
 }
@@ -480,6 +536,29 @@ export class GrokGraph {
     return this.nodes;
   }
 
+  snapshotSanityCheck(): {nodes: ReadonlyMap<string, GripContextNode>, missingNodes: ReadonlySet<GripContextNode>} {
+      const allNodes = new Map<string, GripContextNode>();
+    const nodesToCheck = [...this.nodes.values()];
+    const missingNodes = new Set<GripContextNode>();
+    while (nodesToCheck.length > 0) {
+      const node = nodesToCheck.pop();
+      if (allNodes.has(node!.id)) continue;
+      allNodes.set(node!.id, node!);
+      node!.children.forEach((child) => {
+        if (!allNodes.has(child.id) && !this.nodes.has(child.id) && !missingNodes.has(child)) {
+          nodesToCheck.push(child);
+          missingNodes.add(child);
+        }
+      });
+    }
+
+    if (missingNodes.size > 0) {
+      console.log(
+        `GrokGraph: snapshotSanityCheck: missing node ids: ${Array.from(missingNodes).map(n => n.id).join(", ")}`);
+    }
+    return {nodes: allNodes, missingNodes: missingNodes};
+  }
+
   clearNodes(): void {
     this.nodes.clear();
   }
@@ -504,16 +583,28 @@ export class GrokGraph {
       const ctx = node.contextRef.deref();
       const contextGone = !ctx;
       const idleTooLong = now - node.getLastSeen() > this.maxIdleMs;
-      const noConsumers = this.countLiveConsumers(node) === 0;
+      const count = node.purgeDanglingDrips();  // Returns the number of drips remaining.
+      const noConsumers = count === 0;
 
-      if (contextGone && noConsumers) {
+      if (contextGone && (noConsumers || idleTooLong)) {
+        if (!noConsumers) {
+          this.clearContextNode(node);
+        }
         this.nodes.delete(id);
-        continue;
       }
+    }
+  }
 
-      if (idleTooLong && noConsumers && contextGone) {
-        this.nodes.delete(id);
-      }
+  private clearContextNode(node: GripContextNode): void {
+    for (const wr of node.consumers.values()) {
+      const d = wr.deref();
+      if (d) d.unsubscribeAll();
+    }
+    node.consumers.clear();
+
+    // Remove from parents.
+    for (const parent of node.parents) {
+      node.removeParent(parent);
     }
   }
 
@@ -524,7 +615,6 @@ export class GrokGraph {
     }
     return count;
   }
-
 }
 
 

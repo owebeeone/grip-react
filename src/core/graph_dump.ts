@@ -3,8 +3,8 @@ import { Grip } from "./grip";
 import { Drip } from "./drip";
 import type { Tap } from "./tap";
 import { GripContext } from "./context";
-import { GripContextNode, ProducerRecord }
-from "./graph";import { GripGraphSanityChecker } from "./sanity_checker";
+import { GripContextNode, ProducerRecord } from "./graph";
+import { GripGraphSanityChecker } from "./sanity_checker";
 
 export interface GraphDumpSummary {
 	contextCount: number;
@@ -12,17 +12,20 @@ export interface GraphDumpSummary {
 	dripCount: number;
 	collectedContextCount: number;
 	liveContextCount: number;
+	missingNodes: string[];  // Nodes not in the graph nodes list.
 }
 
 export interface GraphDumpNodeContext {
 	key: string;
 	type: "Context";
 	label?: string;
+	parents?: Array<{ ctx: string; priority: number; }>;
 	children: string[];
 	taps: string[];
 	metadata?: Record<string, unknown>;
 	gcStatus?: "live" | "collected" | "unknown";
 	sanity?: { issues: string[] };
+	consumerDrips: string[];
 }
 
 export interface GraphDumpTapDestinationDrip {
@@ -141,8 +144,8 @@ export class GripGraphDumper {
 		const seenDrips = new Set<Drip<any>>();
 
 		// Iterate graph snapshot
-		const graph = this.grok.getGraph();
-		for (const node of graph.values()) {
+		const {nodes, missingNodes} = this.grok.getGraphSanityCheck();
+		for (const node of nodes.values()) {
 			const ctxNode = this.buildContextNode(node);
 			const msg = checker.reportContext(node);
 			if (msg) ctxNode.sanity = { issues: [msg] };
@@ -172,6 +175,7 @@ export class GripGraphDumper {
 			dripCount: drips.length,
 			collectedContextCount,
 			liveContextCount,
+			missingNodes: Array.from(missingNodes).map((n) => this.keys.getContextKey(n)),
 		};
 		return { timestampIso, summary, nodes: { contexts, taps, drips } };
 	}
@@ -183,14 +187,25 @@ export class GripGraphDumper {
 		const children = node.get_children_nodes().map((c) => this.keys.getContextKey(c));
 		const taps = Array.from(node.producerByTap.keys()).map((t) => this.keys.getTapKey(t));
 		const isRoot = node.get_parent_nodes().length === 0;
+		const parents = node.get_context()?.getParents().map((p) => 
+			({ ctx: this.keys.getContextKey(p.ctx.getContextNode()), priority: p.priority }));
+
+		const consumerDrips: string[] = [];
+		for (const [, wr] of node.get_consumers()) {
+		  const d = wr?.deref();
+		  if (d) consumerDrips.push(this.keys.getDripKey(d));
+		}
+
 		return {
 			key,
 			type: "Context",
 			label: ctx?.id ?? node.id,
 			children,
+			parents: parents ?? [],
 			taps,
 			metadata: { id: node.id, isRoot },
 			gcStatus,
+			consumerDrips,
 		};
 	}
 
