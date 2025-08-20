@@ -5,41 +5,41 @@ import { GripContext } from "../core/context";
 import type { GripContextLike } from "../core/containers";
 import { useRuntime } from "./provider";
 import { Tap } from "../core/tap";
-import { createSimpleValueTap, SimpleTap, SimpleTapHandle } from "../core/simple_tap";
+import { createAtomValueTap, AtomTap, AtomTapHandle } from "../core/atom_tap";
 
 
 
-// Overload 1: When initial value is provided and is non-nullable, return SimpleTap with non-nullable type
-export function useSimpleValueTap<TGrip>(
+// Overload 1: When initial value is provided and is non-nullable, return AtomTap with non-nullable type
+export function useAtomValueTap<TGrip>(
   grip: Grip<TGrip | undefined>,
   opts: {
     ctx?: GripContext;
     initial: NonNullable<TGrip>;
-    tapGrip?: Grip<SimpleTapHandle<NonNullable<TGrip>>>;
+    tapGrip?: Grip<AtomTapHandle<NonNullable<TGrip>>>;
   }
-): SimpleTap<NonNullable<TGrip>>;
+): AtomTap<NonNullable<TGrip>>;
 
-// Overload 2: Standard case - return SimpleTap with original grip type  
-export function useSimpleValueTap<TGrip>(
+// Overload 2: Standard case - return AtomTap with original grip type  
+export function useAtomValueTap<TGrip>(
   grip: Grip<TGrip>,
   opts?: {
     ctx?: GripContext;
     initial?: TGrip;
-    tapGrip?: Grip<SimpleTapHandle<TGrip>>;
+    tapGrip?: Grip<AtomTapHandle<TGrip>>;
   }
-): SimpleTap<TGrip>;
+): AtomTap<TGrip>;
 
 // Implementation
-export function useSimpleValueTap<TGrip>(
+export function useAtomValueTap<TGrip>(
   grip: Grip<TGrip>,
   opts?: {
     ctx?: GripContext;
     initial?: TGrip;
-    tapGrip?: Grip<SimpleTapHandle<TGrip>>;
+    tapGrip?: Grip<AtomTapHandle<TGrip>>;
   }
-): SimpleTap<TGrip> {
+): AtomTap<TGrip> {
   const tap = useMemo(
-    () => createSimpleValueTap(grip, { initial: opts?.initial, handleGrip: opts?.tapGrip }),
+    () => createAtomValueTap(grip, { initial: opts?.initial, handleGrip: opts?.tapGrip }),
     [grip, opts?.initial, opts?.tapGrip]
   );
   useTap(() => tap, { ctx: opts?.ctx, deps: [tap] });
@@ -80,25 +80,25 @@ export function useTap(
 
 /**
  * useGripSetter
- * Returns a stable setter for a SimpleTap handle. No-ops if the handle isn't available yet.
+ * Returns a stable setter for an AtomTap handle. No-ops if the handle isn't available yet.
  *
  * Example:
  * const setLocation = useGripSetter(WEATHER_LOCATION_TAP);
  * <select onChange={e => setLocation(e.target.value)} />
  */
 export function useGripSetter<T>(
-  tapGrip: Grip<SimpleTapHandle<T>>,
+  tapGrip: Grip<AtomTapHandle<T>>,
   ctx?: GripContext | GripContextLike
-): (v: T | undefined) => void {
+): (v: T | undefined | ((prev: T | undefined) => T | undefined)) => void {
   const handle = useGrip(tapGrip, ctx);
-  return useCallback((v: T | undefined) => {
-    handle?.set(v as T);
+  return useCallback((v: T | undefined | ((prev: T | undefined) => T | undefined)) => {
+    (handle as any)?.set(v as any);
   }, [handle]);
 }
 
 /**
  * useGripState
- * React-style API returning [value, setValue] for a Grip controlled by a SimpleTap.
+ * React-style API returning [value, setValue] for a Grip controlled by an AtomTap.
  *
  * Example:
  * const [value, setValue] = useGripState(WEATHER_LOCATION, WEATHER_LOCATION_TAP);
@@ -106,9 +106,9 @@ export function useGripSetter<T>(
  */
 export function useGripState<T>(
   grip: Grip<T>,
-  tapGrip: Grip<SimpleTapHandle<T>>,
+  tapGrip: Grip<AtomTapHandle<T>>,
   ctx?: GripContext | GripContextLike
-): [T | undefined, (v: T | undefined) => void] {
+): [T | undefined, (v: T | undefined | ((prev: T | undefined) => T | undefined)) => void] {
   const value = useGrip(grip, ctx);
   const setValue = useGripSetter(tapGrip, ctx);
   return [value, setValue];
@@ -124,7 +124,7 @@ export function useGripState<T>(
  */
 export function useTextGrip<T = string>(
   grip: Grip<T>,
-  tapGrip: Grip<SimpleTapHandle<T>>,
+  tapGrip: Grip<AtomTapHandle<T>>,
   opts?: {
     ctx?: GripContext | GripContextLike;
     parse?: (s: string) => T | undefined;
@@ -152,7 +152,7 @@ export function useTextGrip<T = string>(
  */
 export function useNumberGrip(
   grip: Grip<number>,
-  tapGrip: Grip<SimpleTapHandle<number>>,
+  tapGrip: Grip<AtomTapHandle<number>>,
   opts?: {
     ctx?: GripContext | GripContextLike;
     emptyAs?: number | undefined; // default: undefined
@@ -195,7 +195,7 @@ export function useNumberGrip(
  */
 export function useSelectGrip<T = string>(
   grip: Grip<T>,
-  tapGrip: Grip<SimpleTapHandle<T>>,
+  tapGrip: Grip<AtomTapHandle<T>>,
   opts?: {
     ctx?: GripContext | GripContextLike;
     parse?: (s: string) => T | undefined;
@@ -226,7 +226,7 @@ export function useSelectGrip<T = string>(
  */
 export function useCheckboxGrip<T = boolean>(
   grip: Grip<T>,
-  tapGrip: Grip<SimpleTapHandle<T>>,
+  tapGrip: Grip<AtomTapHandle<T>>,
   opts?: {
     ctx?: GripContext | GripContextLike;
     trueValue?: T;
@@ -262,7 +262,7 @@ export function useCheckboxGrip<T = boolean>(
  */
 export function useRadioGrip<T>(
   grip: Grip<T>,
-  tapGrip: Grip<SimpleTapHandle<T>>,
+  tapGrip: Grip<AtomTapHandle<T>>,
   optionValue: T,
   opts?: { ctx?: GripContext | GripContextLike; toString?: (v: T) => string }
 ): { checked: boolean; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void } {

@@ -283,7 +283,7 @@ export class GripGraphDumper {
 	}
 
 	private extractTapState(tap: Tap): Record<string, unknown> | undefined {
-		// Best-effort: if the tap exposes a get() method (e.g., SimpleValueTap), surface its value.
+		// Best-effort: if the tap exposes a get() method (e.g., AtomValueTap), surface its value.
 		try {
 			const anyTap = tap as any;
 			if (typeof anyTap.get === "function") {

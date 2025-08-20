@@ -2,15 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { Grok } from '../src/core/grok';
 import { GripRegistry, GripOf } from '../src/core/grip';
 import { Drip } from '../src/core/drip';
-import { createSimpleValueTap } from '../src/core/simple_tap';
-import type { SimpleTap } from '../src/core/simple_tap';
+import { createAtomValueTap } from '../src/core/atom_tap';
+import type { AtomTap } from '../src/core/atom_tap';
 
 describe('WeatherPanel-style multi-context, multi-parent with independent simple taps', () => {
   it('each context uses its local provider and updates independently', () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
     const VALUE = defineGrip<string>('WP.Value', 'init');
-    const VALUE_TAP = defineGrip<SimpleTap<string>>('WP.ValueTap', undefined as any);
+    const VALUE_TAP = defineGrip<AtomTap<string>>('WP.ValueTap', undefined as any);
 
     const grok = new Grok();
 
@@ -20,13 +20,13 @@ describe('WeatherPanel-style multi-context, multi-parent with independent simple
     const C = A.createChild();
 
     // Register one simple tap per context with distinct initials
-    const tapA = createSimpleValueTap(VALUE, { initial: 'A', handleGrip: VALUE_TAP });
+    const tapA = createAtomValueTap(VALUE, { initial: 'A', handleGrip: VALUE_TAP });
     grok.registerTapAt(A, tapA as unknown as any);
 
-    const tapB = createSimpleValueTap(VALUE, { initial: 'B', handleGrip: VALUE_TAP });
+    const tapB = createAtomValueTap(VALUE, { initial: 'B', handleGrip: VALUE_TAP });
     grok.registerTapAt(B, tapB as unknown as any);
 
-    const tapC = createSimpleValueTap(VALUE, { initial: 'C', handleGrip: VALUE_TAP });
+    const tapC = createAtomValueTap(VALUE, { initial: 'C', handleGrip: VALUE_TAP });
     grok.registerTapAt(C, tapC as unknown as any);
 
     // Connect: query both value and controller drips at each destination

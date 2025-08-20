@@ -4,8 +4,8 @@ import { renderHook } from '@testing-library/react';
 import { GripRegistry, GripOf } from '../src/core/grip';
 import { Grok } from '../src/core/grok';
 import { GripProvider } from '../src/react/provider';
-import { useGrip, useSimpleValueTap, useTap } from '../src/react/hooks';
-import { createSimpleValueTap, SimpleTap, SimpleValueTap } from '../src/core/simple_tap';
+import { useGrip, useAtomValueTap, useTap } from '../src/react/hooks';
+import { createAtomValueTap, AtomTap, AtomValueTap } from '../src/core/atom_tap';
 import type { Tap } from '../src/core/tap';
 
 function wrapperWith(grok: Grok) {
@@ -21,7 +21,7 @@ describe('react hooks', () => {
     const VALUE = defineGrip<number>('Hooks.Value', 0);
     const grok = new Grok();
 
-    const tap = createSimpleValueTap(VALUE, { initial: 1 }) as unknown as Tap;
+    const tap = createAtomValueTap(VALUE, { initial: 1 }) as unknown as Tap;
     grok.registerTap(tap);
 
     const { result, rerender } = renderHook(() => useGrip(VALUE), { wrapper: wrapperWith(grok) });
@@ -32,23 +32,23 @@ describe('react hooks', () => {
     expect(result.current).toBe(2);
   });
 
-  it('useSimpleValueTap registers/unregisters tap with lifecycle and exposes value via useGrip', () => {
+  it('useAtomValueTap registers/unregisters tap with lifecycle and exposes value via useGrip', () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
     const VALUE = defineGrip<number>('Hooks.Simple', 10);
-    const VALUE_TAP = defineGrip<SimpleValueTap<number>>('Hooks.Simple2.Tap', undefined);
+    const VALUE_TAP = defineGrip<AtomTap<number>>('Hooks.Simple2.Tap', undefined);
     const grok = new Grok();
 
     const { result, unmount, rerender } = renderHook(
       () => {
-        useSimpleValueTap(VALUE, { tapGrip: VALUE_TAP, initial: 5 });
+        useAtomValueTap(VALUE, { tapGrip: VALUE_TAP, initial: 5 });
         return {value: useGrip(VALUE), tap: useGrip(VALUE_TAP)};
       },
       { wrapper: wrapperWith(grok) }
     );
 
     expect(result.current.value).toBe(5);
-    const tap = result.current.tap as SimpleValueTap<number>;
+    const tap = result.current.tap as AtomValueTap<number>;
 
     // Find the tap and update its value
     tap.set(7);
@@ -67,7 +67,7 @@ describe('react hooks', () => {
     const VALUE = defineGrip<string>('Hooks.Custom', 'init');
     const grok = new Grok();
 
-    const factory = () => createSimpleValueTap(VALUE, { initial: 'A' }) as unknown as Tap;
+    const factory = () => createAtomValueTap(VALUE, { initial: 'A' }) as unknown as Tap;
 
     const { result, unmount, rerender } = renderHook(
       () => {

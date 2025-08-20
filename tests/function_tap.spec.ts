@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { Grok } from '../src/core/grok';
 import { GripRegistry, GripOf, Grip } from '../src/core/grip';
-import { createSimpleValueTap } from '../src/core/simple_tap';
-import type { SimpleTap } from '../src/core/simple_tap';
+import { createAtomValueTap } from '../src/core/atom_tap';
+import type { AtomTap } from '../src/core/atom_tap';
 import { createFunctionTap, FunctionTap } from '../src/core/function_tap';
 import type { FunctionTapHandle } from '../src/core/function_tap';
 import { DualContextContainer } from '../src/core/containers';
@@ -17,7 +17,7 @@ const VALUE_STR = defineGrip<string>('Fn.ValueStr', '');
 
 // Destination param (operation)
 const OP = defineGrip<string>('Fn.Op', '+');
-const OP_HANDLE = defineGrip<SimpleTap<string>>('Fn.Op.Handle');
+const OP_HANDLE = defineGrip<AtomTap<string>>('Fn.Op.Handle');
 
 // Home param (A)
 const A = defineGrip<number>('Fn.A', 0);
@@ -63,11 +63,11 @@ describe('FunctionTap', () => {
     const D2 = P.createChild();
 
     // Home param A provider at P
-    const aTap = createSimpleValueTap(A, { initial: 10 }) as unknown as SimpleTap<number>;
+    const aTap = createAtomValueTap(A, { initial: 10 }) as unknown as AtomTap<number>;
     grok.registerTapAt(P, aTap as any);
 
     // Destination param OP provider at D2 only (so D1 uses default '+')
-    const opTapD2 = createSimpleValueTap(OP, { initial: '*' , handleGrip: OP_HANDLE }) as unknown as SimpleTap<string>;
+    const opTapD2 = createAtomValueTap(OP, { initial: '*' , handleGrip: OP_HANDLE }) as unknown as AtomTap<string>;
     grok.registerTapAt(D2, opTapD2 as any);
 
     // Create function tap at P
@@ -117,7 +117,7 @@ describe('FunctionTap', () => {
     const destRoot = container.getGripConsumerContext();
 
     // Home param A provided at home
-    const aTap = createSimpleValueTap(A, { initial: 3 }) as unknown as SimpleTap<number>;
+    const aTap = createAtomValueTap(A, { initial: 3 }) as unknown as AtomTap<number>;
     grok.registerTapAt(home, aTap as any);
 
     // Function tap attached at home
@@ -129,8 +129,8 @@ describe('FunctionTap', () => {
     const CD2 = destRoot.createChild();
 
     // Destination OP providers at each dest
-    const opTap1 = createSimpleValueTap(OP, { initial: '*' , handleGrip: OP_HANDLE }) as unknown as SimpleTap<string>;
-    const opTap2 = createSimpleValueTap(OP, { initial: '-' , handleGrip: OP_HANDLE }) as unknown as SimpleTap<string>;
+    const opTap1 = createAtomValueTap(OP, { initial: '*' , handleGrip: OP_HANDLE }) as unknown as AtomTap<string>;
+    const opTap2 = createAtomValueTap(OP, { initial: '-' , handleGrip: OP_HANDLE }) as unknown as AtomTap<string>;
     grok.registerTapAt(CD1, opTap1 as any);
     grok.registerTapAt(CD2, opTap2 as any);
 

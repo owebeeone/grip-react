@@ -12,7 +12,7 @@
 - Implement connection-based production (onConnect/onDisconnect with per-context sinks) to avoid creating new drips on re-query.
 - Support multi-output taps efficiently (deliver to multiple grips via sinks, not per-grip drips).
 - Manage parameterGrips lifecycle: subscribe/unsubscribe tied to consumer presence; avoid leaks.
-- Provide a SimpleTap helper for trivial app state (backed by a Drip), and deprecate direct setValue in favor of setDrip.
+- Provide an AtomTap helper for trivial app state (backed by a Drip), and deprecate direct setValue in favor of setDrip.
 
 ### Context lifecycle and graph
 - Provide API to unregister a tap at a specific context: unregisterTapAt(ctx, tapId).

@@ -6,15 +6,15 @@ export * from "./core/grok";
 export * from "./core/containers";
 // Explicit re-exports to ensure they are present in bundled d.ts and runtime exports
 export { 
-  SimpleTapHandle as SimpleTapHandle,
-  SimpleTap as SimpleTap,
-  SimpleValueTap as SimpleValueTap,
-  createSimpleValueTap as createSimpleValueTap,
-  MultiSimpleTapHandle as MultiSimpleTapHandle,
-  MultiSimpleTap as MultiSimpleTap,
-  MultiSimpleValueTap as MultiSimpleValueTap,
-  createMultiSimpleValueTap as createMultiSimpleValueTap
-} from "./core/simple_tap";
+  AtomTapHandle as AtomTapHandle,
+  AtomTap as AtomTap,
+  AtomValueTap as AtomValueTap,
+  createAtomValueTap as createAtomValueTap,
+  MultiAtomTapHandle as MultiAtomTapHandle,
+  MultiAtomTap as MultiAtomTap,
+  MultiAtomValueTap as MultiAtomValueTap,
+  createMultiAtomValueTap as createMultiAtomValueTap
+} from "./core/atom_tap";
 export { BaseTap, BaseTapNoParams } from "./core/base_tap";
 export { GripGraphVisualizer } from "./react/graph_visual";
 export { GraphDumpDialog } from "./react/GraphDumpDialog";

@@ -5,7 +5,7 @@ import { Grok } from '../src/core/grok';
 import { GripContext } from '../src/core/context';
 import type { Tap } from '../src/core/tap';
 import { BaseTap } from '../src/core/base_tap';
-import { createSimpleValueTap } from '../src/core/simple_tap';
+import { createAtomValueTap } from '../src/core/atom_tap';
 
 // Engine-level behavior test plan (TDD skeleton)
 
@@ -16,7 +16,7 @@ describe('Engine shared drip semantics', () => {
     const VALUE = defineGrip<number>('Value', 0);
     const grok = new Grok();
     const ctx = grok.mainContext.createChild();
-    const tap = createSimpleValueTap(VALUE, { initial: 42 }) as unknown as Tap;
+    const tap = createAtomValueTap(VALUE, { initial: 42 }) as unknown as Tap;
     grok.registerTap(tap);
     const d1 = grok.query(VALUE, ctx);
     const d2 = grok.query(VALUE, ctx);
@@ -84,7 +84,7 @@ describe('Engine parameter-driven updates', () => {
     }
     const tap = new ParamOutTap(OUT, PARAM) as unknown as Tap;
     grok.registerTap(tap);
-    const paramHandle = createSimpleValueTap(PARAM, { initial: 'A' }) as unknown as Tap;
+    const paramHandle = createAtomValueTap(PARAM, { initial: 'A' }) as unknown as Tap;
     grok.registerTap(paramHandle);
     const d1 = grok.query(OUT, ctx);
     expect(d1.get()).toBe(1);
@@ -127,7 +127,7 @@ describe('Engine add/remove live taps', () => {
     expect(d0count).toBe(0);  // Gets updated before the tap is registered.
 
     // Register a tap (global registration acts as ancestor availability)
-    const tap = createSimpleValueTap(OUT, { initial: 123 });  // register at main context.
+    const tap = createAtomValueTap(OUT, { initial: 123 });  // register at main context.
     grok.registerTap(tap);  // register at main context.
 
     // Descendant now resolves to the tap-produced value
@@ -144,7 +144,7 @@ describe('Engine add/remove live taps', () => {
     expect(d0count).toBe(1);  // Gets updated before the tap is registered.
 
     // A closer provider via local tap overshadows the ancestor tap
-    const localTap = createSimpleValueTap(OUT, { initial: 7 });
+    const localTap = createAtomValueTap(OUT, { initial: 7 });
     grok.registerTapAt(B, localTap);
     const d2 = grok.query(OUT, B);
     expect(d2.get()).toBe(7);
@@ -190,8 +190,8 @@ describe('Engine add/remove live taps', () => {
     const A = grok.mainContext.createChild();
     const B = A.createChild();
 
-    const tap1 = createSimpleValueTap(OUT, { initial: 111 }) as unknown as Tap;
-    const tap2 = createSimpleValueTap(OUT, { initial: 222 }) as unknown as Tap;
+    const tap1 = createAtomValueTap(OUT, { initial: 111 }) as unknown as Tap;
+    const tap2 = createAtomValueTap(OUT, { initial: 222 }) as unknown as Tap;
 
     // Register tap1 at ancestor A, tap2 at main; B sees closer tap1
     grok.registerTapAt(A, tap1);
@@ -220,8 +220,8 @@ describe('Engine add/remove live taps', () => {
     const B = A.createChild();
 
     // Two taps with same grip; we will register at different contexts
-    const tapRoot = createSimpleValueTap(OUT, { initial: 1 }) as unknown as Tap;
-    const tapA = createSimpleValueTap(OUT, { initial: 2 }) as unknown as Tap;
+    const tapRoot = createAtomValueTap(OUT, { initial: 1 }) as unknown as Tap;
+    const tapA = createAtomValueTap(OUT, { initial: 2 }) as unknown as Tap;
 
     // Register rootTap at main (ancestor of A/B), and aTap at A later
     grok.registerTap(tapRoot);

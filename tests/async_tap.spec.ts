@@ -23,7 +23,7 @@ describe('Async Tap basics', () => {
     const ctx = grok.mainContext.createChild();
 
     // Simple param handle
-    const paramHandle = (await import('../src/core/simple_tap')).createSimpleValueTap(PARAM, { initial: 1 }) as unknown as Tap;
+    const paramHandle = (await import('../src/core/atom_tap')).createAtomValueTap(PARAM, { initial: 1 }) as unknown as Tap;
     grok.registerTap(paramHandle);
 
     // Async tap: waits variable time based on param; older request arrives later (bigger sleep)
@@ -68,7 +68,7 @@ describe('Async Tap basics', () => {
     const grok = new Grok();
     const ctx = grok.mainContext.createChild();
 
-    const paramHandle = (await import('../src/core/simple_tap')).createSimpleValueTap(PARAM, { initial: 'A' }) as unknown as Tap;
+    const paramHandle = (await import('../src/core/atom_tap')).createAtomValueTap(PARAM, { initial: 'A' }) as unknown as Tap;
     grok.registerTap(paramHandle);
 
     const tap = createAsyncMultiTap<{ A: typeof OUT1; B: typeof OUT2 }, { x: number; y: string }, { SX: typeof STATE_X }>({

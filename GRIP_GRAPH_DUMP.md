@@ -56,7 +56,7 @@ High-level JSON payload shape:
       {
         "key": "kTap1",
         "type": "Tap",
-        "class": "SimpleValueTap",
+        "class": "AtomValueTap",
         "providesGrips": ["Grip(WEATHER_LOCATION)", "Grip(WEATHER_LOCATION_TAP)"],
         "publisherContext": "kCtxt2",
         "drips": ["kDrip1"],

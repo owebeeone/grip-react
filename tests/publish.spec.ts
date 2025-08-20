@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Grok } from '../src/core/grok';
 import { GripRegistry, GripOf } from '../src/core/grip';
 import { Drip } from '../src/core/drip';
-import { createMultiSimpleValueTap, createSimpleValueTap, MultiSimpleTap, MultiSimpleValueTap, SimpleTap, SimpleValueTap } from '../src/core/simple_tap';
+import { createMultiAtomValueTap, createAtomValueTap, MultiAtomTap, MultiAtomValueTap, AtomTap, AtomValueTap } from '../src/core/atom_tap';
 import type { Tap } from '../src/core/tap';
 import { aM } from 'vitest/dist/chunks/reporters.d.BFLkQcL6.js';
 
@@ -17,12 +17,12 @@ describe('Engine publish()', () => {
     const A = home.createChild();
     const B = home.createChild();
 
-    const ancestorTap = createSimpleValueTap(OUT, { initial: 10 });
+    const ancestorTap = createAtomValueTap(OUT, { initial: 10 });
     grok.registerTapAt(home, ancestorTap);
     expect(grok.query(OUT, A).get()).toBe(10);
     expect(grok.query(OUT, B).get()).toBe(10);
 
-    const localTap = createSimpleValueTap(OUT, { initial: 7 });
+    const localTap = createAtomValueTap(OUT, { initial: 7 });
     grok.registerTapAt(B, localTap); // local tap overshadows ancestor tap
 
     // B now uses local provider
@@ -40,12 +40,12 @@ describe('Engine publish()', () => {
     const defineGrip = GripOf(registry);
     const G1 = defineGrip<number>('Pub.G1', 1);
     const G2 = defineGrip<number>('Pub.G2', 2);
-    const HANDLE = defineGrip<MultiSimpleTap>('Pub.Handle');
+    const HANDLE = defineGrip<MultiAtomTap>('Pub.Handle');
     const grok = new Grok();
     const home = grok.mainContext;
     const D = home.createChild();
 
-    const tap1 = createMultiSimpleValueTap({gripMap: new Map([[G1, 1], [G2, 2]]), handleGrip: HANDLE});
+    const tap1 = createMultiAtomValueTap({gripMap: new Map([[G1, 1], [G2, 2]]), handleGrip: HANDLE});
     grok.registerTapAt(home, tap1 as unknown as Tap);
 
     const drip1 = grok.query(G1, D);

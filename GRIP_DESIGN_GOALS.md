@@ -25,7 +25,7 @@ A concise statement of the principles guiding GRIP’s engine and React-facing A
   - `useLocalContext(parent?)`: child context created once for component lifetime.
 - **Composable tap registration**:
   - `useTap(() => tap, { ctx, deps })`: register/unregister lifecycle.
-  - `useSimpleValueTap(grip, { ctx, initial?, tapGrip? })`: one-liner for simple value sources.
+  - `useAtomValueTap(grip, { ctx, initial?, tapGrip? })`: one-liner for simple value sources.
 - **Source-agnostic UI**: Components only reference grips and optional controllers; taps can switch between local compute, remote fetch, or transforms without UI changes.
 
 ### Invalidation & Lifecycle
@@ -49,7 +49,7 @@ A concise statement of the principles guiding GRIP’s engine and React-facing A
 ### Async, Loading, and Errors
 
 - **Explicit modeling**: Represent async grips as `{ status, data, error }` or similar. Keep UI decoupled while still renderable across states.
-- **Controllers for writes**: Expose intentful setters (e.g., `SimpleTap.set`) rather than leaking transport details.
+- **Controllers for writes**: Expose intentful setters (e.g., `AtomTap.set`) rather than leaking transport details.
 
 ### Extensibility
 
@@ -79,7 +79,7 @@ const ctx = useLocalContext();
 - **Register a simple value tap**
 
 ```ts
-useSimpleValueTap(MY_VALUE_GRIP, { ctx, initial: 42, tapGrip: MY_CONTROLLER_GRIP });
+useAtomValueTap(MY_VALUE_GRIP, { ctx, initial: 42, tapGrip: MY_CONTROLLER_GRIP });
 ```
 
 - **Generic select bound to grips**
