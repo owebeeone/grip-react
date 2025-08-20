@@ -469,6 +469,7 @@ export class GripContextNode implements GripContextNodeIf {
 export class GrokGraph {
   private grok: Grok;
   private nodes = new Map<string, GripContextNode>();
+  private weakNodes = new Map<string, WeakRef<GripContextNode>>();
   private gcIntervalMs = 30000;
   private maxIdleMs = 120000;
   private gcTimer: any | null = null;
@@ -507,6 +508,7 @@ export class GrokGraph {
     if (!node) {
       node = new GripContextNode(this.grok, ctx);
       this.nodes.set(ctx.id, node);
+      this.weakNodes.set(ctx.id, new WeakRef(node));
       //console.log(`GrokGraph: Created new node for context: ${ctx.id}`);
       // Connect parents hard
       for (const { ctx: parentCtx, priority } of ctx.getParents()) {
@@ -533,7 +535,11 @@ export class GrokGraph {
     return this.nodes;
   }
 
-  snapshotSanityCheck(): {nodes: ReadonlyMap<string, GripContextNode>, missingNodes: ReadonlySet<GripContextNode>} {
+  snapshotSanityCheck(): {
+    nodes: ReadonlyMap<string, GripContextNode>, 
+    missingNodes: ReadonlySet<GripContextNode>,
+    nodesNotReaped: ReadonlySet<GripContextNode>,
+  } {
     const allNodes = new Map<string, GripContextNode>();
     const nodesToCheck = [...this.nodes.values()];
     const missingNodes = new Set<GripContextNode>();
@@ -569,7 +575,27 @@ export class GrokGraph {
       console.log(
         `GrokGraph: snapshotSanityCheck: found ${missingNodes.size} orphaned nodes: ${Array.from(missingNodes).map(n => n.id).join(", ")}`);
     }
-    return {nodes: allNodes, missingNodes: missingNodes};
+
+    const weakNodesToDelete = new Set<string>();
+    const nodesNotReaped = new Set<GripContextNode>();
+    // Check if all nodes still in the graph are also in the weakNodes map (they should be)
+    for (const [id, nodeWr] of this.weakNodes) {
+      const node = nodeWr.deref();
+      if (node) {
+        if (!allNodes.has(node.id)) {
+          nodesNotReaped.add(node);
+          console.warn(`GrokGraph: Sanity Check Warning: Node ${id} is in the active graph but not in the weakNodes map. This indicates an inconsistency.`);
+        }
+      } else {
+        weakNodesToDelete.add(id);
+      }
+    }
+
+    for (const id of weakNodesToDelete) {
+      this.weakNodes.delete(id);
+    }
+
+    return {nodes: allNodes, missingNodes: missingNodes, nodesNotReaped: nodesNotReaped};
   }
 
   clearNodes(): void {
@@ -598,11 +624,12 @@ export class GrokGraph {
     for (const [id, node] of this.nodes) {
       const ctx = node.contextRef.deref();
       const contextGone = !ctx;
-      const idleTooLong = now - node.getLastSeen() > this.maxIdleMs;
       const count = node.purgeDanglingDrips();  // Returns the number of drips remaining.
       const noConsumers = count === 0;
 
-      if (contextGone && (noConsumers || idleTooLong)) {
+      // If the context is gone, there are no consumers, and the node has no children,
+      // then we can delete the node.
+      if (contextGone && noConsumers && node.children.length === 0) {
         nodesToDelete.add(id);
       }
     }

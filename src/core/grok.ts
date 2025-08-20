@@ -286,7 +286,12 @@ export class Grok {
     return this.graph.snapshot();
   }
 
-  getGraphSanityCheck(): {nodes: ReadonlyMap<string, GripContextNode>, missingNodes: ReadonlySet<GripContextNode>} {
+  getGraphSanityCheck(): 
+    {
+      nodes: ReadonlyMap<string, GripContextNode>, 
+      missingNodes: ReadonlySet<GripContextNode>,
+      nodesNotReaped: ReadonlySet<GripContextNode>,
+    } {
     return this.graph.snapshotSanityCheck();
   }
 }

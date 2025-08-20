@@ -3,7 +3,6 @@ import { Drip } from "./drip";
 import type { Tap } from "./tap";
 import { GripContextNode } from "./graph";
 import { Grok } from "./grok";
-import { TaskHandleHolder } from "./task_queue";
 
 // A context can inherit from multiple parents with priorities.
 // It can hold overrides as either values OR Drips (dynamic params).
@@ -13,7 +12,6 @@ export class GripContext {
   private grok: Grok;
   private contextNode: GripContextNode;
   readonly id: string;
-  private handleHolder = new TaskHandleHolder();
 
   constructor(engine: Grok, id?: string) {
     this.grok = engine;

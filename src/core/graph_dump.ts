@@ -12,7 +12,12 @@ export interface GraphDumpSummary {
 	dripCount: number;
 	collectedContextCount: number;
 	liveContextCount: number;
-	missingNodes: string[];  // Nodes not in the graph nodes list.
+	// Nodes not in the graph nodes list but referenced by the graph.
+	missingNodes: string[];
+	// Nodes that are not referenced by the graph but are still alive.
+	// These could be held by something other that Grip's Graph. If
+	// these persist it could indicate a memory leak.
+	nodesNotReaped: string[];
 }
 
 export interface GraphDumpNodeContext {
@@ -144,7 +149,7 @@ export class GripGraphDumper {
 		const seenDrips = new Set<Drip<any>>();
 
 		// Iterate graph snapshot
-		const {nodes, missingNodes} = this.grok.getGraphSanityCheck();
+		const {nodes, missingNodes, nodesNotReaped} = this.grok.getGraphSanityCheck();
 		for (const node of nodes.values()) {
 			const ctxNode = this.buildContextNode(node);
 			const msg = checker.reportContext(node);
@@ -176,6 +181,7 @@ export class GripGraphDumper {
 			collectedContextCount,
 			liveContextCount,
 			missingNodes: Array.from(missingNodes).map((n) => this.keys.getContextKey(n)),
+			nodesNotReaped: Array.from(nodesNotReaped).map((n) => this.keys.getContextKey(n)),
 		};
 		return { timestampIso, summary, nodes: { contexts, taps, drips } };
 	}

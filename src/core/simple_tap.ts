@@ -1,7 +1,6 @@
 import { Drip } from "./drip";
 import { Grip } from "./grip";
 import { GripContext } from "./context";
-import type { Grok } from "./grok";
 import type { Tap } from "./tap";
 import { BaseTapNoParams } from "./base_tap";
 
