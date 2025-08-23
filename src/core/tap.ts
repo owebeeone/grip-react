@@ -40,6 +40,20 @@ export interface Tap {
   produceOnDestParams?(destContext: GripContext | undefined, paramGrip: Grip<any>): void;
 }
 
+/**
+ * A factory for a Tap.
+ * 
+ * This is a lazy factory that is only instantiated if the query matches.
+ * 
+ * The Matcher will need to know what Grips the Tap provides so that it can
+ * determine if the Tap will be selected.
+ */
+export interface TapFactory {
+  label?: string;
+  provides?: readonly Grip<any>[];
+  build(): Tap;
+}
+
 // Optional helper interface for producers that can be activated/deactivated
 export interface ActivatableProducer {
   activate?(requestedGrips?: ReadonlySet<Grip<any>>): void;

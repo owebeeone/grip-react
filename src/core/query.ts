@@ -1,75 +1,81 @@
 import type { Grip } from './grip';
 import type { Tap } from './tap';
 
-// Factories are invoked lazily *only if selected*
-export type TapFactory = () => Tap;
-
-// One condition per Grip; op is limited for pre-evaluation friendliness
-export type ConditionOp = 'equals' | 'notEquals' | 'in' | 'notIn';
-
-export interface QueryCondition<T = unknown> {
-  grip: Grip<T>;
-  op: ConditionOp;
-  // equals/notEquals => T; in/notIn => T[]
-  value: T | readonly T[];
-  /** unified priority/score; defaults to 100 */
-  score: number;
-}
+type QueryConditions = ReadonlyMap<Grip<any>, ReadonlyMap<any, number>>;
 
 export class Query {
   /** conditions keyed by Grip identity (only one per Grip) */
-  public readonly conditions: ReadonlyArray<QueryCondition>;
+  public readonly conditions: QueryConditions;
 
-  constructor(conditions: ReadonlyArray<QueryCondition>) {
+  constructor(conditions: QueryConditions) {
     this.conditions = conditions;
   }
 }
 
+/**
+ * QueryBuilder is a fluent builder for Query.
+ * It only supports equality and inclusion conditions. Inclusion basically
+ * results in multiple query expressions and "or"ed together.
+ * 
+ * Why the limitation? Performance. The query evaluator is optimized to allow
+ * for large numbers of query expressions that evaluate in constant time. If you
+ * need more complex conditions, you can provide a function tap the supplies
+ * the condition value where is is matched for in the Query.
+ */
 export interface QueryBuilder {
-  equals<T>(grip: Grip<T>, value: T, score?: number): QueryBuilder;
-  notEquals<T>(grip: Grip<T>, value: T, score?: number): QueryBuilder;
-  in<T>(grip: Grip<T>, values: readonly T[], score?: number): QueryBuilder;
-  notIn<T>(grip: Grip<T>, values: readonly T[], score?: number): QueryBuilder;
+  oneOf<T>(grip: Grip<T>, value: T, score?: number): QueryBuilder;
+  anyOf<T>(
+    grip: Grip<T>,
+    values: readonly T[],
+    score?: number,
+  ): QueryBuilder;
 
   /** finalize */
   build(): Query;
 }
 
 class QueryBuilderImpl implements QueryBuilder {
-  private readonly conditions: QueryCondition[] = [];
+  private conditions = new Map<Grip<any>, Map<any, number>>();
+  private isBuilt = false;
 
-  private addCondition<T>(
-    grip: Grip<T>,
-    op: ConditionOp,
-    value: T | readonly T[],
-    score?: number,
-  ): this {
-    const existingIndex = this.conditions.findIndex((c) => c.grip === grip);
-    if (existingIndex !== -1) {
-      this.conditions.splice(existingIndex, 1);
+  private copyOnWrite(): void {
+    if (this.isBuilt) {
+      const newConditions = new Map<Grip<any>, Map<any, number>>();
+      for (const [grip, valuesMap] of this.conditions.entries()) {
+        newConditions.set(grip, new Map(valuesMap));
+      }
+      this.conditions = newConditions;
+      this.isBuilt = false;
     }
+  }
 
-    this.conditions.push({ grip, op, value, score: score ?? 100 });
+  oneOf<T>(grip: Grip<T>, value: T, score?: number): this {
+    this.copyOnWrite();
+    if (!this.conditions.has(grip)) {
+      this.conditions.set(grip, new Map<any, number>());
+    }
+    const valuesAndScoresMap = this.conditions.get(grip)!;
+    valuesAndScoresMap.set(value, score ?? 100);
     return this;
   }
 
-  equals<T>(grip: Grip<T>, value: T, score?: number): QueryBuilder {
-    return this.addCondition(grip, 'equals', value, score);
-  }
+  anyOf<T>(grip: Grip<T>, values: readonly T[], score?: number): this {
+    this.copyOnWrite();
+    if (!this.conditions.has(grip)) {
+      this.conditions.set(grip, new Map<any, number>());
+    }
+    const valuesAndScoresMap = this.conditions.get(grip)!;
+    const scoreToUse = score ?? 100;
 
-  notEquals<T>(grip: Grip<T>, value: T, score?: number): QueryBuilder {
-    return this.addCondition(grip, 'notEquals', value, score);
-  }
+    for (const v of values) {
+      valuesAndScoresMap.set(v, scoreToUse);
+    }
 
-  in<T>(grip: Grip<T>, values: readonly T[], score?: number): QueryBuilder {
-    return this.addCondition(grip, 'in', values, score);
-  }
-
-  notIn<T>(grip: Grip<T>, values: readonly T[], score?: number): QueryBuilder {
-    return this.addCondition(grip, 'notIn', values, score);
+    return this;
   }
 
   build(): Query {
+    this.isBuilt = true;
     return new Query(this.conditions);
   }
 }
@@ -82,34 +88,18 @@ export class QueryBuilderFactory {
 }
 
 /** Helpers */
-export const withEquals = <T>(
+export const withOneOf = <T>(
   grip: Grip<T>,
   value: T,
   score?: number,
 ): QueryBuilder => {
-  return new QueryBuilderFactory().newQuery().equals(grip, value, score);
+  return new QueryBuilderFactory().newQuery().oneOf(grip, value, score);
 };
 
-export const withNotEquals = <T>(
-  grip: Grip<T>,
-  value: T,
-  score?: number,
-): QueryBuilder => {
-  return new QueryBuilderFactory().newQuery().notEquals(grip, value, score);
-};
-
-export const withIn = <T>(
+export const withAnyOf = <T>(
   grip: Grip<T>,
   values: readonly T[],
   score?: number,
 ): QueryBuilder => {
-  return new QueryBuilderFactory().newQuery().in(grip, values, score);
-};
-
-export const withNotIn = <T>(
-  grip: Grip<T>,
-  values: readonly T[],
-  score?: number,
-): QueryBuilder => {
-  return new QueryBuilderFactory().newQuery().notIn(grip, values, score);
+  return new QueryBuilderFactory().newQuery().anyOf(grip, values, score);
 };
