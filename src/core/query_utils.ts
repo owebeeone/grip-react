@@ -192,3 +192,132 @@ export class DisjointSetPartitioner<T, K> {
         return Array.from(this.partitions).map(p => p.items);
     }
 }
+
+/**
+ * A helper class to manage unique IDs for objects,
+ * allowing them to be used in composite keys while respecting reference identity.
+ */
+class ObjectKeyManager {
+    // WeakMap holds the object reference and its unique ID.
+    // It won't prevent garbage collection.
+    private objectIds: WeakMap<object, number> = new WeakMap();
+    private nextId: number = 0;
+  
+    /**
+     * Gets a unique ID for any given object.
+     * If the object has been seen before, it returns the existing ID.
+     * If it's a new object, it assigns a new ID and stores it.
+     * @param {object} obj - The class instance or object.
+     * @returns {number} A unique ID for that specific object instance.
+     */
+    public getId(obj: object): number {
+      if (!this.objectIds.has(obj)) {
+        this.objectIds.set(obj, this.nextId++);
+      }
+      // The non-null assertion (!) is safe here because we guarantee the key exists.
+      return this.objectIds.get(obj)!;
+    }
+}
+
+// Create a single instance of the manager to handle all keys.
+const keyManager = new ObjectKeyManager();
+
+/**
+ * Creates a stable, composite map key from an array of parts.
+ * Primitives are compared by value.
+ * Objects are compared by reference (identity).
+ * @param {Array<any>} parts - An array of numbers, strings, and/or objects.
+ * @returns {string} A string key suitable for use in a Map.
+ */
+export function createCompositeKey(parts: any[]): string {
+    return parts
+        .map(part => {
+            const type = typeof part;
+            if (part === null) {
+                return 'N:';
+            }
+            if (type === 'undefined') {
+                return 'U:';
+            }
+            if (type === 'object') {
+                const objectId = keyManager.getId(part);
+                return `O:${objectId}`;
+            }
+            if (type === 'string') {
+                const str = part as string;
+                return `s:${str.length}:${str}`;
+            }
+            if (type === 'number') {
+                const num = part as number;
+                const normalized = Number.isNaN(num)
+                    ? 'NaN'
+                    : Object.is(num, -0)
+                    ? '0'
+                    : String(num);
+                return `n:${normalized}`;
+            }
+            if (type === 'boolean') {
+                return `b:${part ? 'true' : 'false'}`;
+            }
+            // Fallback for uncommon types (symbol, function): length-prefixed string
+            const fallback = String(part);
+            return `x:${fallback.length}:${fallback}`;
+        })
+        .join('|');
+}
+  
+export class TupleMap<K extends any[], V> {
+
+    private internalMap: Map<string, { key: K; value: V }> = new Map();
+
+    public set(key: K, value: V): this {
+        this.internalMap.set(createCompositeKey(key), { key, value });
+        return this;
+    }
+
+    public get(key: K): V | undefined {
+        return this.internalMap.get(createCompositeKey(key))?.value;
+    }
+
+    public delete(key: K): boolean {
+        return this.internalMap.delete(createCompositeKey(key));
+    }
+
+    public has(key: K): boolean {
+        return this.internalMap.has(createCompositeKey(key));
+    }
+
+    public clear(): void {
+        this.internalMap.clear();
+    }
+
+    public size(): number {
+        return this.internalMap.size;
+    }
+
+    public *keys(): IterableIterator<K> {
+        for (const entry of this.internalMap.values()) {
+            yield entry.key;
+        }
+    }
+
+    public *values(): IterableIterator<V> {
+        for (const entry of this.internalMap.values()) {
+            yield entry.value;
+        }
+    }
+
+    public *entries(): IterableIterator<[K, V]> {
+        for (const entry of this.internalMap.values()) {
+            yield [entry.key, entry.value];
+        }
+    }
+
+    public forEach(callbackfn: (value: V, key: K, map: this) => void, thisArg?: any): void {
+        this.internalMap.forEach((entry, key) => callbackfn.call(thisArg, entry.value, entry.key, this));
+    }
+
+    public [Symbol.iterator](): IterableIterator<[K, V]> {
+        return this.entries();
+    }
+}

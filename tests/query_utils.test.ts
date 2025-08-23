@@ -172,3 +172,104 @@ describe('DisjointSetPartitioner', () => {
         expect(normalizePartitions(partitioner.getPartitions())).toEqual(normalizeArrays([]));
     });
 });
+
+// -----------------------------------------------------------------------------
+// TupleMap and createCompositeKey tests
+// -----------------------------------------------------------------------------
+import { TupleMap, createCompositeKey } from '../src/core/query_utils';
+
+describe('TupleMap', () => {
+    it('stores and retrieves mixed-type tuple keys', () => {
+        const m = new TupleMap<[string, number, boolean, ...any], string>();
+        const object = { id: 42 };
+        const object2 = { id: 42 }; // same id, different object.
+        m.set(['id', 42, true, object], 'answer');
+        m.set(['id', 7, false], 'seven');
+
+        expect(m.get(['id', 42, true, object])).toBe('answer');
+        expect(m.get(['id', 42, true, object2])).toBeUndefined();  // different key!
+        expect(m.get(['id', 7, false])).toBe('seven');
+        expect(m.get(['id', 7, true])).toBeUndefined();
+    });
+
+    it('treats object identity in keys (same ref matches, different ref does not)', () => {
+        const a = { x: 1 };
+        const b = { x: 1 };
+        const m = new TupleMap<[object, string], number>();
+        m.set([a, 'k'], 1);
+
+        expect(m.get([a, 'k'])).toBe(1);
+        expect(m.get([b, 'k'])).toBeUndefined();
+    });
+
+    it('supports has, delete, size, clear', () => {
+        const m = new TupleMap<[string], number>();
+        m.set(['a'], 1);
+        m.set(['b'], 2);
+        expect(m.size()).toBe(2);
+        expect(m.has(['a'])).toBe(true);
+        expect(m.delete(['a'])).toBe(true);
+        expect(m.has(['a'])).toBe(false);
+        expect(m.size()).toBe(1);
+        m.clear();
+        expect(m.size()).toBe(0);
+    });
+
+    it('iterates lazily with keys/values/entries and default iterator', () => {
+        const m = new TupleMap<[string, number], string>();
+        m.set(['a', 1], 'A1');
+        m.set(['b', 2], 'B2');
+
+        const keys = Array.from(m.keys());
+        expect(keys).toEqual([
+            ['a', 1],
+            ['b', 2],
+        ]);
+
+        const values = Array.from(m.values());
+        expect(values).toEqual(['A1', 'B2']);
+
+        const entries = Array.from(m.entries());
+        expect(entries).toEqual([
+            [['a', 1], 'A1'],
+            [['b', 2], 'B2'],
+        ]);
+
+        const spreadEntries = [...m];
+        expect(spreadEntries).toEqual(entries);
+    });
+});
+
+describe('createCompositeKey', () => {
+    it('encodes primitives with type prefixes and length-prefixed strings', () => {
+        const key = createCompositeKey(['str|pipe', 123, true, false, 0]);
+        // Expect s:<len>:<raw>, n:<num>, b:<bool>
+        expect(key).toBe('s:8:str|pipe|n:123|b:true|b:false|n:0');
+    });
+
+    it('represents null and undefined distinctly', () => {
+        const key = createCompositeKey([null, undefined, 'x']);
+        expect(key).toBe('N:|U:|s:1:x');
+    });
+
+    it('uses reference identity for objects', () => {
+        const obj1 = { a: 1 };
+        const obj2 = { a: 1 };
+        const k1 = createCompositeKey([obj1, 'x']);
+        const k2 = createCompositeKey([obj1, 'x']);
+        const k3 = createCompositeKey([obj2, 'x']);
+        expect(k1).toBe(k2);
+        expect(k1).not.toBe(k3);
+    });
+
+    it('normalizes special numbers (-0, NaN)', () => {
+        const kNegZero = createCompositeKey([-0]);
+        const kPosZero = createCompositeKey([0]);
+        expect(kNegZero).toBe('n:0');
+        expect(kPosZero).toBe('n:0');
+        const kNaN1 = createCompositeKey([NaN]);
+        const kNaN2 = createCompositeKey([NaN]);
+        expect(kNaN1).toBe('n:NaN');
+        expect(kNaN2).toBe('n:NaN');
+    });
+});
