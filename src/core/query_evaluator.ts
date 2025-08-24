@@ -26,6 +26,16 @@ export interface QueryBinding {
 }
 
 /**
+ * The result of adding a new binding to the evaluator.
+ */
+export interface AddBindingResult {
+    /**
+     * A set of input Grips that were not known to the evaluator before this binding was added.
+     */
+    newInputs: Set<Grip<any>>;
+}
+
+/**
  * Represents a matched query result, containing the tap and the calculated score.
  */
 export interface MatchedTap {
@@ -165,6 +175,7 @@ export class QueryEvaluator {
   private invertedIndex = new InvertedIndex();
   private activeMatches = new Map<string, MatchedTap>(); // Caches the last match result for each binding
   private attributionUtility = new AttributionUtility(); // Persistent utility to maintain factory cache
+  private inputGripRefCounts = new Map<Grip<any>, number>();
 
   // Caching and evaluation strategy state
   private useHybridEvaluation: boolean;
@@ -192,16 +203,32 @@ export class QueryEvaluator {
   /**
    * Incrementally adds a new query binding to the evaluator.
    * @param binding The QueryBinding to add.
+   * @returns An object containing the set of newly introduced input Grips.
    */
-  public addBinding(binding: QueryBinding): void {
+  public addBinding(binding: QueryBinding): AddBindingResult {
+    const newInputs = new Set<Grip<any>>();
+    if (this.bindings.has(binding.id)) {
+        // If binding exists, it's an update. We'll handle this by removing the old one first.
+        this.removeBinding(binding.id);
+    }
+
     this.bindings.set(binding.id, binding);
     this.invertedIndex.add(binding.query);
     this.cache.clear();
+
+    for (const grip of binding.query.conditions.keys()) {
+        const currentCount = this.inputGripRefCounts.get(grip) || 0;
+        if (currentCount === 0) {
+            newInputs.add(grip);
+        }
+        this.inputGripRefCounts.set(grip, currentCount + 1);
+    }
     
     if (this.useHybridEvaluation) {
       const changedPartitionRecord = this.queryPartitioner.add(binding.query, Array.from(binding.query.conditions.keys()));
       this.updateHybridStateForPartition(changedPartitionRecord.items);
     }
+    return { newInputs };
   }
 
   /**
@@ -214,6 +241,17 @@ export class QueryEvaluator {
       this.bindings.delete(bindingId);
       this.invertedIndex.remove(binding.query);
       this.cache.clear();
+
+      for (const grip of binding.query.conditions.keys()) {
+          const currentCount = this.inputGripRefCounts.get(grip);
+          if (currentCount) {
+              if (currentCount === 1) {
+                  this.inputGripRefCounts.delete(grip);
+              } else {
+                  this.inputGripRefCounts.set(grip, currentCount - 1);
+              }
+          }
+      }
       
       if (this.useHybridEvaluation) {
         const removedFrom = this.queryPartitioner.remove(binding.query);
@@ -231,13 +269,7 @@ export class QueryEvaluator {
    * @returns A Set of all unique input Grips.
    */
   public getAllInputGrips(): Set<Grip<any>> {
-    const allGrips = new Set<Grip<any>>();
-    for (const binding of this.bindings.values()) {
-        for (const grip of binding.query.conditions.keys()) {
-            allGrips.add(grip);
-        }
-    }
-    return allGrips;
+    return new Set(this.inputGripRefCounts.keys());
   }
 
   private updateHybridStateForPartition(partition: Set<Query>): void {
