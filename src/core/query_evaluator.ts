@@ -10,7 +10,7 @@
 import { Grip } from "./grip";
 import { Query, QueryConditions, QueryMatchScoreMap } from "./query";
 import { Tap, TapFactory } from "./tap";
-import { DisjointSetPartitioner, TupleMap } from "./query_utils";
+import { DisjointSetPartitioner, TupleMap, createCompositeKey } from "./query_utils";
 
 // ---[ Evaluator-Specific Interfaces ]-------------------------------------------
 
@@ -234,18 +234,26 @@ export class QueryEvaluator {
   private attributionEngine = new OutputAttributionEngine();
   private activeMatches = new Map<string, MatchedTap>(); // Caches the last match result for each binding
 
-  // Hybrid evaluation state
+  // Caching and evaluation strategy state
   private useHybridEvaluation: boolean;
+  private useCache: boolean;
   private queryPartitioner = new DisjointSetPartitioner<Query, Grip<any>>();
   private precomputationThreshold: number;
   private precomputedMaps = new Map<Set<Query>, TupleMap<any[], MatchedTap[]>>();
   private runtimeEvaluationSets = new Set<Set<Query>>();
+  private cache = new TupleMap<any[], MatchedTap[]>();
   private queryToPartition = new Map<Query, Set<Query>>();
   private partitionToKeyGrips = new Map<Set<Query>, Grip<any>[]>();
 
-  constructor(initialBindings: QueryBinding[] = [], precomputationThreshold: number = 1000, useHybridEvaluation: boolean = true) {
+  constructor(
+    initialBindings: QueryBinding[] = [], 
+    precomputationThreshold: number = 1000, 
+    useHybridEvaluation: boolean = true,
+    useCache: boolean = true
+  ) {
     this.precomputationThreshold = precomputationThreshold;
     this.useHybridEvaluation = useHybridEvaluation;
+    this.useCache = useCache;
     initialBindings.forEach(b => this.addBinding(b));
   }
 
@@ -256,6 +264,7 @@ export class QueryEvaluator {
   public addBinding(binding: QueryBinding): void {
     this.bindings.set(binding.id, binding);
     this.invertedIndex.add(binding.query);
+    this.cache.clear();
     
     if (this.useHybridEvaluation) {
       const changedPartitionRecord = this.queryPartitioner.add(binding.query, Array.from(binding.query.conditions.keys()));
@@ -272,6 +281,7 @@ export class QueryEvaluator {
     if (binding) {
       this.bindings.delete(bindingId);
       this.invertedIndex.remove(binding.query);
+      this.cache.clear();
       
       if (this.activeMatches.has(bindingId)) {
         this.attributionEngine.removeMatch(bindingId);
@@ -436,18 +446,40 @@ export class QueryEvaluator {
         }
 
         for (const [partition] of partitionsToProcess.entries()) {
+            const keyGrips = this.partitionToKeyGrips.get(partition) || [];
+            const key = keyGrips.map(g => context.getValue(g));
+
             if (this.runtimeEvaluationSets.has(partition)) {
-                const matches = this.evaluateQueries(partition, context);
-                matches.forEach((match, id) => newMatchesByBindingId.set(id, match));
+                if (this.useCache && this.cache.has(key)) {
+                    const cachedMatches = this.cache.get(key) || [];
+                    cachedMatches.forEach(match => newMatchesByBindingId.set(match.bindingId, match));
+                } else {
+                    const matches = this.evaluateQueries(partition, context);
+                    if (this.useCache) {
+                        this.cache.set(key, Array.from(matches.values()));
+                    }
+                    matches.forEach((match, id) => newMatchesByBindingId.set(id, match));
+                }
             } else if (this.precomputedMaps.has(partition)) {
-                const keyGrips = this.partitionToKeyGrips.get(partition)!;
-                const key = keyGrips.map(g => context.getValue(g));
                 const matches = this.precomputedMaps.get(partition)!.get(key) || [];
                 matches.forEach(match => newMatchesByBindingId.set(match.bindingId, match));
             }
         }
     } else {
-        newMatchesByBindingId = this.evaluateQueries(queriesToReevaluate, context);
+        // Standard runtime evaluation path
+        const keyGrips = Array.from(queriesToReevaluate).flatMap(q => Array.from(q.conditions.keys()));
+        const uniqueKeyGrips = Array.from(new Set(keyGrips)).sort((a,b) => a.key.localeCompare(b.key));
+        const key = uniqueKeyGrips.map(g => context.getValue(g));
+
+        if (this.useCache && this.cache.has(key)) {
+            const cachedMatches = this.cache.get(key) || [];
+            newMatchesByBindingId = new Map(cachedMatches.map(m => [m.bindingId, m]));
+        } else {
+            newMatchesByBindingId = this.evaluateQueries(queriesToReevaluate, context);
+            if (this.useCache) {
+                this.cache.set(key, Array.from(newMatchesByBindingId.values()));
+            }
+        }
     }
 
     const bindingsToCheck = new Set<string>();
