@@ -216,7 +216,7 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         expect(res.get(out)).toBeUndefined();
     });
 
-    it('removeBinding on unknown id is a no-op', () => {
+    it('removeBinding on unknown id is a no-op and returns no removed grips', () => {
         const out = new Grip<string>({ name: 'out' });
         const g = new Grip<string>({ name: 'g' });
         const tap = makeTap('t', [out]);
@@ -224,12 +224,39 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         const ev = makeEvaluator(false);
         ev.addBinding({ id: 'ID', query: q, tap, baseScore: 0 });
 
-        ev.removeBinding('UNKNOWN'); // should not throw
+        const removeResult = ev.removeBinding('UNKNOWN'); // should not throw
+        expect(removeResult.removedInputs.size).toBe(0);
         
         expectGripsToEqual(ev.getAllInputGrips(), [g]);
         
         const res = evalTwice(ev, new Set([g]), ctxWith([[g, 'x']]));
         expect(res.get(out)?.bindingId).toBe('ID');
+    });
+
+    it('removeBinding returns newly unused grips', () => {
+        const g1 = new Grip<string>({ name: 'g1' });
+        const g2 = new Grip<string>({ name: 'g2' });
+        const g3 = new Grip<string>({ name: 'g3' });
+        const out = new Grip<string>({ name: 'out' });
+        const tap = makeTap('t', [out]);
+        const q1 = qb().oneOf(g1, 'x').oneOf(g2, 'y').build();
+        const q2 = qb().oneOf(g2, 'y').oneOf(g3, 'z').build();
+
+        const ev = makeEvaluator(useHybridEvaluation, useCache);
+        ev.addBinding({ id: 'B1', query: q1, tap, baseScore: 0 });
+        ev.addBinding({ id: 'B2', query: q2, tap, baseScore: 0 });
+
+        expectGripsToEqual(ev.getAllInputGrips(), [g1, g2, g3]);
+
+        // Remove B2. g2 is still used by B1, but g3 is now unused.
+        const removeResult = ev.removeBinding('B2');
+        expectGripsToEqual(removeResult.removedInputs, [g3]);
+        expectGripsToEqual(ev.getAllInputGrips(), [g1, g2]);
+
+        // Remove B1. g1 and g2 are now unused.
+        const removeResult2 = ev.removeBinding('B1');
+        expectGripsToEqual(removeResult2.removedInputs, [g1, g2]);
+        expectGripsToEqual(ev.getAllInputGrips(), []);
     });
 
     it('updates attribution when a matched binding score changes', () => {
@@ -252,6 +279,8 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         // Change to make weaker become stronger
         const qWeak2 = qb().oneOf(g, 'a', 11).build();
         // Replace binding by removing and re-adding with same id but different query/score
+        const removeResult = ev.removeBinding('W');
+        expectGripsToEqual(removeResult.removedInputs, []); // 'g' is still used by S
         const addResult = ev.addBinding({ id: 'W', query: qWeak2, tap: weaker, baseScore: 0 });
 
         expectGripsToEqual(addResult.newInputs, []); // 'g' is already known

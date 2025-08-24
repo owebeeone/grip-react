@@ -36,6 +36,16 @@ export interface AddBindingResult {
 }
 
 /**
+ * The result of removing a binding from the evaluator.
+ */
+export interface RemoveBindingResult {
+    /**
+     * A set of input Grips that are no longer used by any query after this binding was removed.
+     */
+    removedInputs: Set<Grip<any>>;
+}
+
+/**
  * Represents a matched query result, containing the tap and the calculated score.
  */
 export interface MatchedTap {
@@ -234,8 +244,10 @@ export class QueryEvaluator {
   /**
    * Incrementally removes a query binding from the evaluator.
    * @param bindingId The ID of the query binding to remove.
+   * @returns An object containing the set of input Grips that are no longer used.
    */
-  public removeBinding(bindingId: string): void {
+  public removeBinding(bindingId: string): RemoveBindingResult {
+    const removedInputs = new Set<Grip<any>>();
     const binding = this.bindings.get(bindingId);
     if (binding) {
       this.bindings.delete(bindingId);
@@ -247,6 +259,7 @@ export class QueryEvaluator {
           if (currentCount) {
               if (currentCount === 1) {
                   this.inputGripRefCounts.delete(grip);
+                  removedInputs.add(grip);
               } else {
                   this.inputGripRefCounts.set(grip, currentCount - 1);
               }
@@ -262,6 +275,7 @@ export class QueryEvaluator {
         }
       }
     }
+    return { removedInputs };
   }
 
   /**
