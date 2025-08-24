@@ -1,4 +1,9 @@
 /**
+ * @file: query_utils.ts
+ * @description: Contains utility classes for the GRIP query evaluator.
+ */
+
+/**
  * Internal record for managing a single partition's state.
  */
 type PartitionRecord<T> = {
@@ -108,6 +113,15 @@ export class DisjointSetPartitioner<T, K> {
         }
         
         return partition;
+    }
+    
+    /**
+     * Retrieves the partition record for a given item.
+     * @param item The item to find the partition for.
+     * @returns The partition record containing the item, or undefined if not found.
+     */
+    public getPartitionForItem(item: T): PartitionRecord<T> | undefined {
+        return this.itemToPartition.get(item);
     }
 
     /**

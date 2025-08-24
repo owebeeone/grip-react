@@ -125,9 +125,10 @@ export class InvertedIndex {
 // ---[ Main Evaluator Logic ]----------------------------------------------------
 
 /**
- * A stateless utility to handle attribution logic.
+ * A stateful engine to handle attribution logic efficiently by pre-partitioning taps.
  */
-class AttributionUtility {
+class OutputAttributionEngine {
+    private partitioner = new DisjointSetPartitioner<Tap | TapFactory, Grip<any>>();
     private factoryCache = new WeakMap<TapFactory, Tap>();
 
     private getTap(tapOrFactory: Tap | TapFactory): Tap {
@@ -141,17 +142,32 @@ class AttributionUtility {
         return tapOrFactory as Tap;
     }
 
+    public addTap(tapOrFactory: Tap | TapFactory): void {
+        const tap = this.getTap(tapOrFactory);
+        this.partitioner.add(tapOrFactory, Array.from(tap.provides));
+    }
+
+    public removeTap(tapOrFactory: Tap | TapFactory): void {
+        this.partitioner.remove(tapOrFactory);
+    }
+
     public attribute(matches: MatchedTap[]): Map<Grip<any>, AttributedOutput> {
         const attributed = new Map<Grip<any>, AttributedOutput>();
-        const partitioner = new DisjointSetPartitioner<MatchedTap, Grip<any>>();
-
+        
+        // Group matches by their pre-computed partition
+        const matchesByPartition = new Map<any, MatchedTap[]>();
         for (const match of matches) {
-            const tap = this.getTap(match.tap);
-            partitioner.add(match, Array.from(tap.provides));
+            const partition = this.partitioner.getPartitionForItem(match.tap);
+            if (partition) {
+                if (!matchesByPartition.has(partition)) {
+                    matchesByPartition.set(partition, []);
+                }
+                matchesByPartition.get(partition)!.push(match);
+            }
         }
 
-        for (const partition of partitioner.getPartitions()) {
-            const sortedTaps = Array.from(partition).sort((a, b) => 
+        for (const group of matchesByPartition.values()) {
+            const sortedTaps = group.sort((a, b) => 
                 b.score - a.score || a.bindingId.localeCompare(b.bindingId)
             );
             const seenOutputs = new Set<Grip<any>>();
@@ -184,7 +200,7 @@ export class QueryEvaluator {
   private bindings = new Map<string, QueryBinding>(); // Keyed by binding.id
   private invertedIndex = new InvertedIndex();
   private activeMatches = new Map<string, MatchedTap>(); // Caches the last match result for each binding
-  private attributionUtility = new AttributionUtility(); // Persistent utility to maintain factory cache
+  private attributionEngine = new OutputAttributionEngine();
   private inputGripRefCounts = new Map<Grip<any>, number>();
 
   // Caching and evaluation strategy state
@@ -218,12 +234,12 @@ export class QueryEvaluator {
   public addBinding(binding: QueryBinding): AddBindingResult {
     const newInputs = new Set<Grip<any>>();
     if (this.bindings.has(binding.id)) {
-        // If binding exists, it's an update. We'll handle this by removing the old one first.
         this.removeBinding(binding.id);
     }
 
     this.bindings.set(binding.id, binding);
     this.invertedIndex.add(binding.query);
+    this.attributionEngine.addTap(binding.tap);
     this.cache.clear();
 
     for (const grip of binding.query.conditions.keys()) {
@@ -252,6 +268,7 @@ export class QueryEvaluator {
     if (binding) {
       this.bindings.delete(bindingId);
       this.invertedIndex.remove(binding.query);
+      this.attributionEngine.removeTap(binding.tap);
       this.cache.clear();
 
       for (const grip of binding.query.conditions.keys()) {
@@ -347,7 +364,7 @@ export class QueryEvaluator {
               const context = { getValue: (g: Grip<any>) => new Map(currentCombination).get(g) };
               const key = gripArray.map(g => context.getValue(g));
               const matches = this.evaluateQueries(partition, context);
-              const attributed = this.attributionUtility.attribute(Array.from(matches.values()));
+              const attributed = this.attributionEngine.attribute(Array.from(matches.values()));
               precomputedMap.set(key, attributed);
               return;
           }
@@ -436,6 +453,20 @@ export class QueryEvaluator {
 
     // Now, run attribution on the complete, updated set of all active matches
     const allActiveMatches = Array.from(this.activeMatches.values());
-    return this.attributionUtility.attribute(allActiveMatches);
+    
+    if (this.useCache) {
+        const keyGrips = this.getAllInputGrips();
+        const key = Array.from(keyGrips).sort((a,b) => a.key.localeCompare(b.key)).map(g => context.getValue(g));
+        
+        if (this.cache.has(key)) {
+            return this.cache.get(key)!;
+        } else {
+            const result = this.attributionEngine.attribute(allActiveMatches);
+            this.cache.set(key, result);
+            return result;
+        }
+    }
+    
+    return this.attributionEngine.attribute(allActiveMatches);
   }
 }

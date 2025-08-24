@@ -1,6 +1,6 @@
 import type { Grip } from './grip';
-import type { Tap } from './tap';
-import type { Query, TapFactory } from './query';
+import type { Tap, TapFactory } from './tap';
+import type { Query } from './query';
 
 /** Result contract: (false with 0), or (true with score) */
 export type MatchScore = { matched: boolean; score: number };
