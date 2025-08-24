@@ -57,6 +57,13 @@ function normalizeAttributedOutputs(m: Map<Grip<any>, { bindingId: string; score
     return arr;
 }
 
+// Helper to compare sets of Grips by their keys for stable assertion
+function expectGripsToEqual(actual: Set<Grip<any>>, expected: Grip<any>[]) {
+    const actualKeys = Array.from(actual).map(g => g.key).sort();
+    const expectedKeys = expected.map(g => g.key).sort();
+    expect(actualKeys).toEqual(expectedKeys);
+}
+
 // Exercise both cold and hot paths and assert identical results by value
 function evalTwice(ev: QueryEvaluator, grips: Set<Grip<any>>, ctx: any) {
     const first = ev.onGripsChanged(grips, ctx);
@@ -76,6 +83,8 @@ describe('QueryEvaluator - attribution basics', () => {
 
         const ev = makeEvaluator(useHybridEvaluation, useCache);
         ev.addBinding({ id: 'A', query: q, tap, baseScore: 5 });
+        
+        expectGripsToEqual(ev.getAllInputGrips(), [color]);
 
         const result = evalTwice(ev, new Set([color]), ctxWith([[color, 'red']]));
         const attr = result.get(out)!;
@@ -97,6 +106,8 @@ describe('QueryEvaluator - attribution basics', () => {
         ev.addBinding({ id: 'B1', query: q1, tap: t1, baseScore: 0 });
         ev.addBinding({ id: 'B2', query: q2, tap: t2, baseScore: 0 });
 
+        expectGripsToEqual(ev.getAllInputGrips(), [g]);
+
         const res = evalTwice(ev, new Set([g]), ctxWith([[g, 'x']]));
         expect(res.get(o1)?.bindingId).toBe('B1');
         expect(res.get(o2)?.bindingId).toBe('B2');
@@ -115,6 +126,8 @@ describe('QueryEvaluator - tie-breaks and partitions', () => {
         // Add B1 first to ensure order of addition doesn't determine outcome
         ev.addBinding({ id: 'B1', query: q, tap: t2, baseScore: 0 });
         ev.addBinding({ id: 'A1', query: q, tap: t1, baseScore: 0 });
+
+        expectGripsToEqual(ev.getAllInputGrips(), [toggle]);
 
         const res = evalTwice(ev, new Set([toggle]), ctxWith([[toggle, true]]));
         expect(res.get(out)?.bindingId).toBe('A1'); // A1 comes before B1 alphabetically
@@ -139,6 +152,8 @@ describe('QueryEvaluator - tie-breaks and partitions', () => {
         ev.addBinding({ id: 'A', query: qA, tap: tA, baseScore: 0 });
         ev.addBinding({ id: 'B', query: qB, tap: tB, baseScore: 0 });
         ev.addBinding({ id: 'C', query: qC, tap: tC, baseScore: 0 });
+        
+        expectGripsToEqual(ev.getAllInputGrips(), [gA, gB, gC]);
 
         // All match: C should win both outputs
         let res = evalTwice(ev, new Set([gA, gB, gC]), ctxWith([[gA, 'yes'], [gB, 'yes'], [gC, 'yes']]));
@@ -166,6 +181,8 @@ describe('QueryEvaluator - factories and caching', () => {
         ev.addBinding({ id: 'B1', query: q1, tap: factory, baseScore: 0 });
         ev.addBinding({ id: 'B2', query: q2, tap: factory, baseScore: 0 });
 
+        expectGripsToEqual(ev.getAllInputGrips(), [flag]);
+
         const res = evalTwice(ev, new Set([flag]), ctxWith([[flag, true]]));
         expect(res.get(out)).toBeTruthy();
         expect(counter.n).toBe(1);
@@ -182,6 +199,8 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         const ev = makeEvaluator(false);
         ev.addBinding({ id: 'E', query: empty, tap, baseScore: 100 });
 
+        expectGripsToEqual(ev.getAllInputGrips(), []);
+
         const res = evalTwice(ev, new Set([g]), ctxWith([[g, 'anything']]));
         expect(res.get(out)).toBeUndefined();
     });
@@ -195,6 +214,9 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         ev.addBinding({ id: 'ID', query: q, tap, baseScore: 0 });
 
         ev.removeBinding('UNKNOWN'); // should not throw
+        
+        expectGripsToEqual(ev.getAllInputGrips(), [g]);
+        
         const res = evalTwice(ev, new Set([g]), ctxWith([[g, 'x']]));
         expect(res.get(out)?.bindingId).toBe('ID');
     });
@@ -211,6 +233,8 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         ev.addBinding({ id: 'S', query: qStrong, tap: stronger, baseScore: 0 });
         ev.addBinding({ id: 'W', query: qWeak, tap: weaker, baseScore: 0 });
 
+        expectGripsToEqual(ev.getAllInputGrips(), [g]);
+
         let res = evalTwice(ev, new Set([g]), ctxWith([[g, 'a']]));
         expect(res.get(out)?.bindingId).toBe('S');
 
@@ -219,6 +243,8 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         // Replace binding by removing and re-adding with same id but different query/score
         ev.removeBinding('W');
         ev.addBinding({ id: 'W', query: qWeak2, tap: weaker, baseScore: 0 });
+
+        expectGripsToEqual(ev.getAllInputGrips(), [g]);
 
         res = evalTwice(ev, new Set([g]), ctxWith([[g, 'a']]));
         expect(res.get(out)?.bindingId).toBe('W');
@@ -235,6 +261,8 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         const ev = makeEvaluator(useHybridEvaluation, useCache);
         ev.addBinding({ id: 'P', query: q, tap, baseScore: 0 });
 
+        expectGripsToEqual(ev.getAllInputGrips(), [color, size]);
+
         // Context only provides color, size is undefined. The query should not match.
         let res = evalTwice(ev, new Set([color, size]), ctxWith([[color, 'red']]));
         expect(res.get(out)).toBeUndefined();
@@ -248,6 +276,8 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
 
         const ev = makeEvaluator(useHybridEvaluation, useCache);
         ev.addBinding({ id: 'M', query: q, tap, baseScore: 0 });
+
+        expectGripsToEqual(ev.getAllInputGrips(), [color]);
 
         // First, it matches
         let res = evalTwice(ev, new Set([color]), ctxWith([[color, 'red']]));
@@ -268,11 +298,13 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         const ev = makeEvaluator(useHybridEvaluation, useCache);
         // 1. Add low-scoring binding and evaluate
         ev.addBinding({ id: 'LOW', query: q, tap: tapLow, baseScore: 0 });
+        expectGripsToEqual(ev.getAllInputGrips(), [g]);
         let res = evalTwice(ev, new Set([g]), ctxWith([[g, 'x']]));
         expect(res.get(out)?.bindingId).toBe('LOW');
 
         // 2. Add a new, higher-scoring binding for the same query
         ev.addBinding({ id: 'HIGH', query: q, tap: tapHigh, baseScore: 5 });
+        expectGripsToEqual(ev.getAllInputGrips(), [g]);
         
         // 3. Re-evaluate
         res = evalTwice(ev, new Set([g]), ctxWith([[g, 'x']]));
@@ -314,6 +346,7 @@ describe('QueryEvaluator - Complex Partition Merging', () => {
 
         // 2. Add the high-scoring bridge tap
         ev.addBinding({ id: 'C', query: qC, tap: tC_bridge, baseScore: 0 });
+        expectGripsToEqual(ev.getAllInputGrips(), [g1, g2, g3]);
 
         // 3. Re-evaluate. C should now win o1 because it has a higher score.
         //    B should still win o2 because C doesn't provide it.

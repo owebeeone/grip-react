@@ -226,6 +226,20 @@ export class QueryEvaluator {
     }
   }
 
+  /**
+   * Returns a complete set of all input grips used by any query in the evaluator.
+   * @returns A Set of all unique input Grips.
+   */
+  public getAllInputGrips(): Set<Grip<any>> {
+    const allGrips = new Set<Grip<any>>();
+    for (const binding of this.bindings.values()) {
+        for (const grip of binding.query.conditions.keys()) {
+            allGrips.add(grip);
+        }
+    }
+    return allGrips;
+  }
+
   private updateHybridStateForPartition(partition: Set<Query>): void {
     this.clearHybridStateForPartition(partition);
 
