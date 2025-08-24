@@ -10,7 +10,7 @@
 import { Grip } from "./grip";
 import { Query, QueryConditions, QueryMatchScoreMap } from "./query";
 import { Tap, TapFactory } from "./tap";
-import { DisjointSetPartitioner } from "./query_utils";
+import { DisjointSetPartitioner, createCompositeKey } from "./query_utils";
 
 // ---[ Evaluator-Specific Interfaces ]-------------------------------------------
 
@@ -185,7 +185,6 @@ export class OutputAttributionEngine {
     if (matchToRemove) {
       this.activeMatches.delete(bindingId);
       
-      // Immediately clear any outputs attributed to the removed match.
       const tap = this.getTap(matchToRemove.tap);
       for (const grip of tap.provides) {
           if (this.attributedOutputs.get(grip)?.bindingId === bindingId) {
@@ -197,7 +196,6 @@ export class OutputAttributionEngine {
       
       if (removedFromPartition) {
         this.clearAttributionsForPartition(removedFromPartition.items);
-        // After removal, the partition might be dirty (split). Process it now.
         const newPartitions = this.partitioner.repartitionDirtySets();
         if (newPartitions.size > 0) {
             this.reattributePartitions(newPartitions);
@@ -237,13 +235,17 @@ export class QueryEvaluator {
   private activeMatches = new Map<string, MatchedTap>(); // Caches the last match result for each binding
 
   // Hybrid evaluation state
+  private useHybridEvaluation: boolean;
   private queryPartitioner = new DisjointSetPartitioner<Query, Grip<any>>();
   private precomputationThreshold: number;
-  private precomputedMaps = new Map<Query, Map<string, MatchedTap[]>>();
-  private runtimeEvaluationSets = new Set<Query>();
+  private precomputedMaps = new Map<Set<Query>, Map<string, MatchedTap[]>>();
+  private runtimeEvaluationSets = new Set<Set<Query>>();
+  private queryToPartition = new Map<Query, Set<Query>>();
+  private partitionToKeyGrips = new Map<Set<Query>, Grip<any>[]>();
 
-  constructor(initialBindings: QueryBinding[] = [], precomputationThreshold: number = 1000) {
+  constructor(initialBindings: QueryBinding[] = [], precomputationThreshold: number = 1000, useHybridEvaluation: boolean = false) {
     this.precomputationThreshold = precomputationThreshold;
+    this.useHybridEvaluation = useHybridEvaluation;
     initialBindings.forEach(b => this.addBinding(b));
   }
 
@@ -254,7 +256,11 @@ export class QueryEvaluator {
   public addBinding(binding: QueryBinding): void {
     this.bindings.set(binding.id, binding);
     this.invertedIndex.add(binding.query);
-    // TODO: Incrementally update hybrid evaluation state
+    
+    if (this.useHybridEvaluation) {
+      const changedPartitionRecord = this.queryPartitioner.add(binding.query, Array.from(binding.query.conditions.keys()));
+      this.updateHybridStateForPartition(changedPartitionRecord.items);
+    }
   }
 
   /**
@@ -267,14 +273,99 @@ export class QueryEvaluator {
       this.bindings.delete(bindingId);
       this.invertedIndex.remove(binding.query);
       
-      // If this query had an active match, remove it from the attribution engine.
       if (this.activeMatches.has(bindingId)) {
         this.attributionEngine.removeMatch(bindingId);
         this.activeMatches.delete(bindingId);
       }
-      // TODO: Incrementally update hybrid evaluation state
+      
+      if (this.useHybridEvaluation) {
+        const removedFrom = this.queryPartitioner.remove(binding.query);
+        if (removedFrom) {
+          this.clearHybridStateForPartition(removedFrom.items);
+          const newPartitions = this.queryPartitioner.repartitionDirtySets();
+          newPartitions.forEach(p => this.updateHybridStateForPartition(p.items));
+        }
+      }
     }
   }
+
+  private updateHybridStateForPartition(partition: Set<Query>): void {
+    this.clearHybridStateForPartition(partition);
+
+    if (this.calculateComplexity(partition) <= this.precomputationThreshold) {
+      this.precomputePartition(partition);
+    } else {
+      this.runtimeEvaluationSets.add(partition);
+    }
+    partition.forEach(q => this.queryToPartition.set(q, partition));
+  }
+  
+  private clearHybridStateForPartition(partition: Set<Query>): void {
+      this.precomputedMaps.delete(partition);
+      this.runtimeEvaluationSets.delete(partition);
+      this.partitionToKeyGrips.delete(partition);
+      partition.forEach(q => this.queryToPartition.delete(q));
+  }
+
+  private calculateComplexity(partition: Set<Query>): number {
+      const gripValues = new Map<Grip<any>, Set<any>>();
+      for (const query of partition) {
+          for (const [grip, valuesMap] of query.conditions.entries()) {
+              if (!gripValues.has(grip)) gripValues.set(grip, new Set());
+              const gripSet = gripValues.get(grip)!;
+              for (const value of valuesMap.keys()) {
+                  gripSet.add(value);
+              }
+          }
+      }
+      let complexity = 1;
+      for (const values of gripValues.values()) {
+          complexity *= values.size;
+          if (complexity > this.precomputationThreshold) return complexity; // Early exit
+      }
+      return complexity;
+  }
+
+  private precomputePartition(partition: Set<Query>): void {
+      const precomputedMap = new Map<string, MatchedTap[]>();
+      const grips = new Set<Grip<any>>();
+      for (const query of partition) {
+          query.conditions.forEach((_, grip) => grips.add(grip));
+      }
+      
+      const gripArray = Array.from(grips).sort((a, b) => a.key.localeCompare(b.key));
+      this.partitionToKeyGrips.set(partition, gripArray);
+
+      const allGripValues = new Map<Grip<any>, any[]>();
+      for (const grip of gripArray) {
+          const values = new Set<any>();
+          for (const query of partition) {
+              query.conditions.get(grip)?.forEach((_, value) => values.add(value));
+          }
+          allGripValues.set(grip, Array.from(values));
+      }
+
+      const generateCombinations = (index: number, currentCombination: [Grip<any>, any][]) => {
+          if (index === gripArray.length) {
+              const context = { getValue: (g: Grip<any>) => new Map(currentCombination).get(g) };
+              const key = createCompositeKey(gripArray.map(g => context.getValue(g)));
+              const matches = this.evaluateQueries(partition, context);
+              precomputedMap.set(key, Array.from(matches.values()));
+              return;
+          }
+          const grip = gripArray[index];
+          const values = allGripValues.get(grip) || [undefined];
+          for (const value of values) {
+              currentCombination.push([grip, value]);
+              generateCombinations(index + 1, currentCombination);
+              currentCombination.pop();
+          }
+      };
+      
+      generateCombinations(0, []);
+      this.precomputedMaps.set(partition, precomputedMap);
+  }
+
 
   /**
    * Evaluates a set of queries against a given context.
@@ -285,7 +376,6 @@ export class QueryEvaluator {
   private evaluateQueries(queries: Set<Query>, context: any): Map<string, MatchedTap> {
     const newMatches = new Map<string, MatchedTap>();
 
-    // Since a query can have multiple bindings, we need to find all of them.
     const bindingsToEvaluate: QueryBinding[] = [];
     for (const binding of this.bindings.values()) {
         if (queries.has(binding.query)) {
@@ -295,22 +385,22 @@ export class QueryEvaluator {
 
     for (const binding of bindingsToEvaluate) {
       let totalScore = 0;
-      let allGripsMatched = true;
-
+      
       if (binding.query.conditions.size === 0) {
-        allGripsMatched = false;
+        continue;
       }
-
+      
+      let allConditionsMatch = true;
       for (const [grip, valuesAndScoresMap] of binding.query.conditions.entries()) {
         const currentValue = context.getValue(grip);
         if (currentValue === undefined || !valuesAndScoresMap.has(currentValue)) {
-          allGripsMatched = false;
+          allConditionsMatch = false;
           break;
         }
         totalScore += valuesAndScoresMap.get(currentValue)!;
       }
 
-      if (allGripsMatched) {
+      if (allConditionsMatch) {
         newMatches.set(binding.id, {
             tap: binding.tap,
             score: binding.baseScore + totalScore,
@@ -330,11 +420,36 @@ export class QueryEvaluator {
   public onGripsChanged(changedGrips: Set<Grip<any>>, context: any): Map<Grip<any>, AttributedOutput> {
     const queriesToReevaluate = this.invertedIndex.getAffectedQueries(changedGrips);
     
-    // TODO: Integrate hybrid evaluation logic here.
-    
-    const newMatches = this.evaluateQueries(queriesToReevaluate, context);
+    let newMatchesByBindingId: Map<string, MatchedTap>;
 
-    // Find all bindings associated with the re-evaluated queries
+    if (this.useHybridEvaluation) {
+        newMatchesByBindingId = new Map<string, MatchedTap>();
+        const partitionsToProcess = new Map<Set<Query>, Set<Query>>();
+        for (const query of queriesToReevaluate) {
+            const partition = this.queryToPartition.get(query);
+            if (partition) {
+                if (!partitionsToProcess.has(partition)) {
+                    partitionsToProcess.set(partition, new Set());
+                }
+                partitionsToProcess.get(partition)!.add(query);
+            }
+        }
+
+        for (const [partition] of partitionsToProcess.entries()) {
+            if (this.runtimeEvaluationSets.has(partition)) {
+                const matches = this.evaluateQueries(partition, context);
+                matches.forEach((match, id) => newMatchesByBindingId.set(id, match));
+            } else if (this.precomputedMaps.has(partition)) {
+                const keyGrips = this.partitionToKeyGrips.get(partition)!;
+                const key = createCompositeKey(keyGrips.map(g => context.getValue(g)));
+                const matches = this.precomputedMaps.get(partition)!.get(key) || [];
+                matches.forEach(match => newMatchesByBindingId.set(match.bindingId, match));
+            }
+        }
+    } else {
+        newMatchesByBindingId = this.evaluateQueries(queriesToReevaluate, context);
+    }
+
     const bindingsToCheck = new Set<string>();
     for (const binding of this.bindings.values()) {
         if (queriesToReevaluate.has(binding.query)) {
@@ -342,21 +457,17 @@ export class QueryEvaluator {
         }
     }
 
-    // Compare new matches with the cached state to update the attribution engine incrementally.
     for (const bindingId of bindingsToCheck) {
       const oldMatch = this.activeMatches.get(bindingId);
-      const newMatch = newMatches.get(bindingId);
+      const newMatch = newMatchesByBindingId.get(bindingId);
 
       if (oldMatch && !newMatch) {
-        // Matched before, but not anymore.
         this.attributionEngine.removeMatch(bindingId);
         this.activeMatches.delete(bindingId);
       } else if (!oldMatch && newMatch) {
-        // Didn't match before, but does now.
         this.attributionEngine.addMatch(newMatch);
         this.activeMatches.set(bindingId, newMatch);
       } else if (oldMatch && newMatch) {
-        // Matched before and still does, but the score or tap might have changed.
         if (oldMatch.score !== newMatch.score || oldMatch.tap !== newMatch.tap) {
           this.attributionEngine.addMatch(newMatch);
           this.activeMatches.set(bindingId, newMatch);
@@ -364,7 +475,6 @@ export class QueryEvaluator {
       }
     }
     
-    // Get the final result from the updated attribution engine.
     return this.attributionEngine.getAttributedOutputs();
   }
 }

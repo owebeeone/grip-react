@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QueryEvaluator, OutputAttributionEngine } from '../src/core/query_evaluator';
+import { QueryEvaluator, QueryBinding } from '../src/core/query_evaluator';
 import { Grip } from '../src/core/grip';
 import { Query, QueryBuilderFactory } from '../src/core/query';
 import type { Tap, TapFactory } from '../src/core/tap';
@@ -38,7 +38,7 @@ describe('QueryEvaluator - attribution basics', () => {
         const tap = makeTap('tapA', [out]);
         const q: Query = qb().oneOf(color, 'red', 10).build();
 
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         ev.addBinding({ id: 'A', query: q, tap, baseScore: 5 });
 
         const result = ev.onGripsChanged(new Set([color]), ctxWith([[color, 'red']]));
@@ -57,7 +57,7 @@ describe('QueryEvaluator - attribution basics', () => {
         const q1 = qb().oneOf(g, 'x', 5).build();
         const q2 = qb().oneOf(g, 'x', 6).build();
 
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         ev.addBinding({ id: 'B1', query: q1, tap: t1, baseScore: 0 });
         ev.addBinding({ id: 'B2', query: q2, tap: t2, baseScore: 0 });
 
@@ -75,7 +75,7 @@ describe('QueryEvaluator - tie-breaks and partitions', () => {
         const t2 = makeTap('t2', [out]);
         const q = qb().oneOf(toggle, true, 10).build();
 
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         // Add B1 first to ensure order of addition doesn't determine outcome
         ev.addBinding({ id: 'B1', query: q, tap: t2, baseScore: 0 });
         ev.addBinding({ id: 'A1', query: q, tap: t1, baseScore: 0 });
@@ -99,7 +99,7 @@ describe('QueryEvaluator - tie-breaks and partitions', () => {
         const qB = qb().oneOf(gB, 'yes', 10).build();
         const qC = qb().oneOf(gC, 'yes', 15).build(); // highest
 
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         ev.addBinding({ id: 'A', query: qA, tap: tA, baseScore: 0 });
         ev.addBinding({ id: 'B', query: qB, tap: tB, baseScore: 0 });
         ev.addBinding({ id: 'C', query: qC, tap: tC, baseScore: 0 });
@@ -126,7 +126,7 @@ describe('QueryEvaluator - factories and caching', () => {
         const q1 = qb().oneOf(flag, true, 10).build();
         const q2 = qb().oneOf(flag, true, 11).build();
 
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         ev.addBinding({ id: 'B1', query: q1, tap: factory, baseScore: 0 });
         ev.addBinding({ id: 'B2', query: q2, tap: factory, baseScore: 0 });
 
@@ -143,7 +143,7 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         const tap = makeTap('t', [out]);
         const empty = new Query(new Map());
 
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         ev.addBinding({ id: 'E', query: empty, tap, baseScore: 100 });
 
         const res = ev.onGripsChanged(new Set([g]), ctxWith([[g, 'anything']]));
@@ -155,7 +155,7 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         const g = new Grip<string>({ name: 'g' });
         const tap = makeTap('t', [out]);
         const q = qb().oneOf(g, 'x', 10).build();
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         ev.addBinding({ id: 'ID', query: q, tap, baseScore: 0 });
 
         ev.removeBinding('UNKNOWN'); // should not throw
@@ -171,7 +171,7 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         const qStrong = qb().oneOf(g, 'a', 10).build();
         const qWeak = qb().oneOf(g, 'a', 9).build();
 
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         ev.addBinding({ id: 'S', query: qStrong, tap: stronger, baseScore: 0 });
         ev.addBinding({ id: 'W', query: qWeak, tap: weaker, baseScore: 0 });
 
@@ -196,7 +196,7 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         // Query depends on both color and size
         const q = qb().oneOf(color, 'red', 10).oneOf(size, 'L', 5).build();
         
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         ev.addBinding({ id: 'P', query: q, tap, baseScore: 0 });
 
         // Context only provides color, size is undefined. The query should not match.
@@ -210,7 +210,7 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         const tap = makeTap('t', [out]);
         const q = qb().oneOf(color, 'red', 10).build();
 
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         ev.addBinding({ id: 'M', query: q, tap, baseScore: 0 });
 
         // First, it matches
@@ -229,7 +229,7 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         const tapHigh = makeTap('high', [out]);
         const q = qb().oneOf(g, 'x', 10).build();
 
-        const ev = new QueryEvaluator();
+        const ev = new QueryEvaluator([], 1000, false);
         // 1. Add low-scoring binding and evaluate
         ev.addBinding({ id: 'LOW', query: q, tap: tapLow, baseScore: 0 });
         let res = ev.onGripsChanged(new Set([g]), ctxWith([[g, 'x']]));
@@ -243,5 +243,60 @@ describe('QueryEvaluator - edge cases and incremental updates', () => {
         
         // 4. Assert the new binding wins
         expect(res.get(out)?.bindingId).toBe('HIGH');
+    });
+});
+
+// Using .skip to prevent this from running on every file change during development.
+// Remove .skip to run the performance benchmark.
+describe.skip('QueryEvaluator - Performance', () => {
+    const NUM_QUERIES = 15;
+    const NUM_ITERATIONS = 1000000;
+
+    // Setup a complex scenario
+    const grips = Array.from({ length: 5 }, (_, i) => new Grip<number>({ name: `g${i}` }));
+    const outGrip = new Grip<string>({ name: 'perfOut' });
+    const bindings: QueryBinding[] = [];
+
+    for (let i = 0; i < NUM_QUERIES; i++) {
+        const grip1 = grips[i % grips.length];
+        const grip2 = grips[(i + 1) % grips.length];
+        const query = qb()
+            .oneOf(grip1, i, 1)
+            .oneOf(grip2, i + 1, 1)
+            .build();
+        const tap = makeTap(`tap${i}`, [outGrip]);
+        bindings.push({ id: `perf_${i}`, query, tap, baseScore: 0 });
+    }
+
+    const context = ctxWith([
+        [grips[0], 0],
+        [grips[1], 1],
+    ]);
+    const changedGrips = new Set([grips[0], grips[1]]);
+
+    it(`measures runtime evaluation for ${NUM_ITERATIONS} iterations`, () => {
+        const ev = new QueryEvaluator(bindings, 10000, false); // Hybrid eval disabled
+        const start = performance.now();
+        for (let i = 0; i < NUM_ITERATIONS; i++) {
+            ev.onGripsChanged(changedGrips, context);
+        }
+        const end = performance.now();
+        const duration = end - start;
+        console.log(`Runtime Evaluation (${NUM_ITERATIONS} iterations): ${duration.toFixed(2)}ms`);
+        // This is a benchmark, not a functional assertion. We expect it to complete.
+        expect(duration).toBeGreaterThan(0);
+    });
+
+    it(`measures hybrid evaluation for ${NUM_ITERATIONS} iterations`, () => {
+        const ev = new QueryEvaluator(bindings, 10000, true); // Hybrid eval enabled
+        const start = performance.now();
+        for (let i = 0; i < NUM_ITERATIONS; i++) {
+            ev.onGripsChanged(changedGrips, context);
+        }
+        const end = performance.now();
+        const duration = end - start;
+        console.log(`Hybrid Evaluation (${NUM_ITERATIONS} iterations): ${duration.toFixed(2)}ms`);
+        // This is a benchmark, not a functional assertion. We expect it to complete.
+        expect(duration).toBeGreaterThan(0);
     });
 });
