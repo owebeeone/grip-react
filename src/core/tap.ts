@@ -50,7 +50,7 @@ export interface Tap {
  */
 export interface TapFactory {
   label?: string;
-  provides?: readonly Grip<any>[];
+  provides: readonly Grip<any>[];
   build(): Tap;
 }
 

@@ -1,7 +1,11 @@
 import type { Grip } from './grip';
 import type { Tap } from './tap';
 
-type QueryConditions = ReadonlyMap<Grip<any>, ReadonlyMap<any, number>>;
+export type QueryMatchScoreMap = ReadonlyMap<any, number>;  // match value -> score 
+export type QueryConditions = ReadonlyMap<Grip<any>, QueryMatchScoreMap>;
+
+type MutableQueryMatchScoreMap = Map<any, number>;
+type MutableQueryConditions = Map<Grip<any>, MutableQueryMatchScoreMap>;
 
 export class Query {
   /** conditions keyed by Grip identity (only one per Grip) */
@@ -35,7 +39,7 @@ export interface QueryBuilder {
 }
 
 class QueryBuilderImpl implements QueryBuilder {
-  private conditions = new Map<Grip<any>, Map<any, number>>();
+  private conditions = new Map<Grip<any>, MutableQueryMatchScoreMap>() as MutableQueryConditions;
   private isBuilt = false;
 
   private copyOnWrite(): void {
@@ -52,7 +56,8 @@ class QueryBuilderImpl implements QueryBuilder {
   oneOf<T>(grip: Grip<T>, value: T, score?: number): this {
     this.copyOnWrite();
     if (!this.conditions.has(grip)) {
-      this.conditions.set(grip, new Map<any, number>());
+      const newMatchScoreMap = new Map<any, number>() as MutableQueryMatchScoreMap;
+      this.conditions.set(grip, newMatchScoreMap);
     }
     const valuesAndScoresMap = this.conditions.get(grip)!;
     valuesAndScoresMap.set(value, score ?? 100);
@@ -62,7 +67,8 @@ class QueryBuilderImpl implements QueryBuilder {
   anyOf<T>(grip: Grip<T>, values: readonly T[], score?: number): this {
     this.copyOnWrite();
     if (!this.conditions.has(grip)) {
-      this.conditions.set(grip, new Map<any, number>());
+        const newMatchScoreMap = new Map<any, number>() as MutableQueryMatchScoreMap;
+        this.conditions.set(grip, newMatchScoreMap);
     }
     const valuesAndScoresMap = this.conditions.get(grip)!;
     const scoreToUse = score ?? 100;
