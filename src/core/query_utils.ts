@@ -3,8 +3,8 @@
  */
 type PartitionRecord<T> = {
     items: Set<T>;
-    isDirty: boolean;
 };
+
 
 /**
  * A general-purpose, stateful utility to partition items into disjoint sets
@@ -26,10 +26,11 @@ export class DisjointSetPartitioner<T, K> {
      * Adds a new item to the partitioner, merging it with existing sets if necessary.
      * @param item The item to add.
      * @param characteristics The set of characteristics for this item.
+     * @returns The partition record that was created or modified.
      */
-    public add(item: T, characteristics: K[]): void {
+    public add(item: T, characteristics: K[]): PartitionRecord<T> {
         if (this.itemToPartition.has(item)) {
-            return; // Item already exists.
+            return this.itemToPartition.get(item)!;
         }
 
         this.itemToCharacteristics.set(item, new Set(characteristics));
@@ -43,11 +44,9 @@ export class DisjointSetPartitioner<T, K> {
 
         let targetPartition: PartitionRecord<T>;
         if (partitionsToMerge.size === 0) {
-            // Create a new partition for this item.
-            targetPartition = { items: new Set([item]), isDirty: false };
+            targetPartition = { items: new Set([item]) };
             this.partitions.add(targetPartition);
         } else {
-            // Merge into the first found partition and consolidate others.
             const mergeList = Array.from(partitionsToMerge);
             targetPartition = mergeList[0];
             targetPartition.items.add(item);
@@ -60,133 +59,98 @@ export class DisjointSetPartitioner<T, K> {
                     targetPartition.items.add(sourceItem);
                     this.itemToPartition.set(sourceItem, targetPartition);
                 }
-
-                // Update characteristics to point to the new target partition
-                for (const sourceItem of sourcePartition.items) {
-                    const sourceChars = this.itemToCharacteristics.get(sourceItem);
-                    if (sourceChars) {
-                        for (const char of sourceChars) {
-                            this.characteristicToPartition.set(char, targetPartition);
-                        }
-                    }
-                }
-
+                
+                this.updateCharacteristicMappings(sourcePartition, targetPartition);
                 this.partitions.delete(sourcePartition);
             }
         }
 
-        // Update mappings for the new item and all its characteristics.
         this.itemToPartition.set(item, targetPartition);
         for (const char of characteristics) {
             this.characteristicToPartition.set(char, targetPartition);
         }
+        
+        return targetPartition;
+    }
+
+    private updateCharacteristicMappings(from: PartitionRecord<T>, to: PartitionRecord<T>): void {
+        for (const sourceItem of from.items) {
+            const sourceChars = this.itemToCharacteristics.get(sourceItem);
+            if (sourceChars) {
+                for (const char of sourceChars) {
+                    if (this.characteristicToPartition.get(char) === from) {
+                        this.characteristicToPartition.set(char, to);
+                    }
+                }
+            }
+        }
     }
 
     /**
-     * Removes an item from the partitioner. This marks the affected partition
-     * as "dirty" for delayed re-computation.
+     * Removes an item from the partitioner. This may mark the affected partition
+     * as "dirty" if it could have been split.
      * @param item The item to remove.
+     * @returns The partition the item was removed from, or null if not found.
      */
-    public remove(item: T): void {
+    public remove(item: T): PartitionRecord<T> | null {
         const partition = this.itemToPartition.get(item);
-        if (!partition) return;
-
-        // Capture characteristics of the item before we delete its mapping
-        const removedCharacteristics = this.itemToCharacteristics.get(item) || new Set<K>();
+        if (!partition) return null;
 
         partition.items.delete(item);
-
-        // Clean up direct mappings for the item.
         this.itemToPartition.delete(item);
         this.itemToCharacteristics.delete(item);
 
-        // If the partition is now empty, drop it and clean characteristic mappings.
         if (partition.items.size === 0) {
             this.partitions.delete(partition);
             this.dirtyPartitions.delete(partition);
-
-            // Remove any characteristic keys that still point to this (now removed) partition.
-            const keysToDelete: K[] = [];
-            for (const [char, mappedPartition] of this.characteristicToPartition.entries()) {
-                if (mappedPartition === partition) {
-                    keysToDelete.push(char);
-                }
-            }
-            for (const char of keysToDelete) {
-                this.characteristicToPartition.delete(char);
-            }
-            return;
-        }
-
-        if (partition.items.size >= 2) {
-            // Partition may need splitting; defer by marking dirty
-            partition.isDirty = true;
+        } else if (partition.items.size >= 2) {
             this.dirtyPartitions.add(partition);
-        } else {
-            // Exactly one item remains: keep partition but remove stale characteristic mappings
-            partition.isDirty = false;
-            const remainingCharacteristics = new Set<K>();
-            for (const remainingItem of partition.items) {
-                const chars = this.itemToCharacteristics.get(remainingItem);
-                if (chars) {
-                    for (const c of chars) remainingCharacteristics.add(c);
-                }
-            }
-            for (const c of removedCharacteristics) {
-                if (!remainingCharacteristics.has(c) && this.characteristicToPartition.get(c) === partition) {
-                    this.characteristicToPartition.delete(c);
-                }
-            }
         }
+        
+        return partition;
     }
 
     /**
-     * Returns true if there are any dirty partitions.
+     * Re-partitions all items from dirty sets.
+     * @returns A set of newly formed partitions resulting from splits.
      */
-    public hasDirtyPartitions(): boolean {
-        return this.dirtyPartitions.size > 0;
-    }
+    public repartitionDirtySets(): Set<PartitionRecord<T>> {
+        if (this.dirtyPartitions.size === 0) return new Set();
 
-    /**
-     * Re-partitions all items from dirty sets. This is called by getPartitions().
-     */
-    public repartitionDirtySets(): void {
-        if (this.dirtyPartitions.size === 0) return;
-
-        const itemsToRepartition = new Set<T>();
+        const newPartitions = new Set<PartitionRecord<T>>();
         for (const partition of this.dirtyPartitions) {
-            partition.items.forEach(item => itemsToRepartition.add(item));
-
-            // Remove all characteristic mappings that point to this partition.
-            const keysToDelete: K[] = [];
-            for (const [char, mappedPartition] of this.characteristicToPartition.entries()) {
-                if (mappedPartition === partition) {
-                    keysToDelete.push(char);
+            // Clean up old characteristic mappings for all items in the dirty partition
+            for (const item of partition.items) {
+                const chars = this.itemToCharacteristics.get(item);
+                if (chars) {
+                    for (const char of chars) {
+                        if (this.characteristicToPartition.get(char) === partition) {
+                            this.characteristicToPartition.delete(char);
+                        }
+                    }
                 }
             }
-            for (const char of keysToDelete) {
-                this.characteristicToPartition.delete(char);
-            }
-
             this.partitions.delete(partition);
-        }
-
-        // Remove all affected items before re-adding them to rebuild partitions correctly.
-        itemsToRepartition.forEach(item => this.itemToPartition.delete(item));
-
-        // Re-add each item. The `add` method will create new, correct partitions.
-        for (const item of itemsToRepartition) {
-            const characteristics = Array.from(this.itemToCharacteristics.get(item) || []);
-            this.add(item, characteristics);
+            
+            // Re-add each item, which will form new, correct partitions
+            const formed = new Set<PartitionRecord<T>>();
+            for (const item of partition.items) {
+                this.itemToPartition.delete(item);
+                const newPartition = this.add(item, Array.from(this.itemToCharacteristics.get(item) || []));
+                formed.add(newPartition);
+            }
+            // Only report partitions if an actual split occurred
+            if (formed.size > 1) {
+                for (const p of formed) newPartitions.add(p);
+            }
         }
 
         this.dirtyPartitions.clear();
+        return newPartitions;
     }
 
     /**
-     * Returns the current partitions. If any partitions are "dirty" due to removals,
-     * it re-computes them before returning the result.
-     * @returns An iterable of the disjoint sets.
+     * Returns all current partitions. Note: Does not process dirty sets.
      */
     public getPartitions(): Iterable<Set<T>> {
         return Array.from(this.partitions).map(p => p.items);

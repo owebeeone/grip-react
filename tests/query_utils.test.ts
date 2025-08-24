@@ -42,9 +42,16 @@ describe('DisjointSetPartitioner', () => {
 
     it('should place items with no shared characteristics into separate partitions', () => {
         const partitioner = new DisjointSetPartitioner<{ id: string }, string>();
-        partitioner.add(itemA, ['red']);
-        partitioner.add(itemB, ['blue']);
-        partitioner.add(itemC, ['green']);
+        const pA = partitioner.add(itemA, ['red']);
+        const pB = partitioner.add(itemB, ['blue']);
+        const pC = partitioner.add(itemC, ['green']);
+
+        expect(pA).not.toBe(pB);
+        expect(pA).not.toBe(pC);
+        expect(pB).not.toBe(pC);
+        expect(pA.items.has(itemA)).toBe(true);
+        expect(pB.items.has(itemB)).toBe(true);
+        expect(pC.items.has(itemC)).toBe(true);
 
         const partitions = partitioner.getPartitions();
         expect(normalizePartitions(partitions)).toEqual(normalizeArrays([[itemA], [itemB], [itemC]]));
@@ -52,9 +59,12 @@ describe('DisjointSetPartitioner', () => {
 
     it('should place items with shared characteristics into the same partition', () => {
         const partitioner = new DisjointSetPartitioner<{ id: string }, string>();
-        partitioner.add(itemA, ['red', 'circle']);
-        partitioner.add(itemB, ['blue', 'square']);
-        partitioner.add(itemC, ['green', 'circle']);
+        const pA = partitioner.add(itemA, ['red', 'circle']);
+        const pB = partitioner.add(itemB, ['blue', 'square']);
+        const pC = partitioner.add(itemC, ['green', 'circle']);
+
+        expect(pA).toBe(pC);
+        expect(pB).not.toBe(pA);
 
         const partitions = partitioner.getPartitions();
         expect(normalizePartitions(partitions)).toEqual(normalizeArrays([[itemA, itemC], [itemB]]));
@@ -62,14 +72,17 @@ describe('DisjointSetPartitioner', () => {
 
     it('should merge partitions when a new item bridges them', () => {
         const partitioner = new DisjointSetPartitioner<{ id: string }, string>();
-        partitioner.add(itemA, ['red']);
-        partitioner.add(itemB, ['blue']);
+        const pA = partitioner.add(itemA, ['red']);
+        const pB = partitioner.add(itemB, ['blue']);
         
         // Before bridging, they are separate
         expect(normalizePartitions(partitioner.getPartitions())).toEqual(normalizeArrays([[itemA], [itemB]]));
 
         // Add itemC that shares characteristics with both A and B
-        partitioner.add(itemC, ['red', 'blue']);
+        const pC = partitioner.add(itemC, ['red', 'blue']);
+
+        expect(pA).not.toBe(pB);
+        expect(pC).toBe(pA);
 
         const partitions = partitioner.getPartitions();
         expect(normalizePartitions(partitions)).toEqual(normalizeArrays([[itemA, itemB, itemC]]));
@@ -81,10 +94,18 @@ describe('DisjointSetPartitioner', () => {
         partitioner.add(itemB, ['red']);
         partitioner.add(itemC, ['red']);
 
-        partitioner.remove(itemB);
-
+        const removed = partitioner.remove(itemB);
+        expect(removed).not.toBeNull();
+        expect(removed!.items.has(itemA)).toBe(true);
+        expect(removed!.items.has(itemC)).toBe(true);
         const partitions = partitioner.getPartitions();
         expect(normalizePartitions(partitions)).toEqual(normalizeArrays([[itemA, itemC]]));
+
+        const newParts = partitioner.repartitionDirtySets();  // should do nothing
+        expect(newParts.size).toBe(0);
+
+        const partitions2 = partitioner.getPartitions();
+        expect(normalizePartitions(partitions2)).toEqual(normalizeArrays([[itemA, itemC]]));
     });
 
     it('should handle removal of an item that splits a partition', () => {
@@ -97,8 +118,10 @@ describe('DisjointSetPartitioner', () => {
         expect(normalizePartitions(partitioner.getPartitions())).toEqual(normalizeArrays([[itemA, itemB, itemC]]));
 
         // Removing the bridge should split the partition
-        partitioner.remove(itemC);
-        partitioner.repartitionDirtySets();
+        const removed = partitioner.remove(itemC);
+        expect(removed).not.toBeNull();
+        const splitParts = partitioner.repartitionDirtySets();
+        expect(splitParts.size).toBe(2);
 
         const partitions = partitioner.getPartitions();
         expect(normalizePartitions(partitions)).toEqual(normalizeArrays([[itemA], [itemB]]));
