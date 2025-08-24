@@ -70,6 +70,14 @@ export interface TapAttribution {
   attributedGrips: Set<Grip<any>>;
 }
 
+/**
+ * Represents the change in attributions after an evaluation.
+ */
+export interface EvaluationDelta {
+    added: Map<Tap | TapFactory, TapAttribution>;
+    removed: Map<Tap | TapFactory, TapAttribution>; // The old value that was removed
+}
+
 
 // ---[ Utility Components ]------------------------------------------------------
 
@@ -193,6 +201,7 @@ export class QueryEvaluator {
   private activeMatches = new Map<string, MatchedTap>(); // Caches the last match result for each binding
   private attributionUtility = new AttributionUtility();
   private inputGripRefCounts = new Map<Grip<any>, number>();
+  private lastAttributedResult = new Map<Tap | TapFactory, TapAttribution>();
 
   // Caching and evaluation strategy state
   private useHybridEvaluation: boolean;
@@ -422,9 +431,9 @@ export class QueryEvaluator {
    * The main entry point for the evaluator, called when Grip values change.
    * @param changedGrips The set of Grips that have new values.
    * @param context The current GripContext.
-   * @returns The final map of attributed Taps and the grips they provide.
+   * @returns The delta of attributions that have been added or removed.
    */
-  public onGripsChanged(changedGrips: Set<Grip<any>>, context: any): Map<Tap | TapFactory, TapAttribution> {
+  public onGripsChanged(changedGrips: Set<Grip<any>>, context: any): EvaluationDelta {
     const queriesToReevaluate = this.invertedIndex.getAffectedQueries(changedGrips);
     
     // Update active matches based on the re-evaluated queries
@@ -446,19 +455,60 @@ export class QueryEvaluator {
     // Now, run attribution on the complete, updated set of all active matches
     const allActiveMatches = Array.from(this.activeMatches.values());
     
+    let newResult: Map<Tap | TapFactory, TapAttribution>;
+
     if (this.useCache) {
         const keyGrips = this.getAllInputGrips();
         const key = Array.from(keyGrips).sort((a,b) => a.key.localeCompare(b.key)).map(g => context.getValue(g));
         
         if (this.cache.has(key)) {
-            return this.cache.get(key)!;
+            newResult = this.cache.get(key)!;
         } else {
-            const result = this.attributionUtility.attribute(allActiveMatches);
-            this.cache.set(key, result);
-            return result;
+            newResult = this.attributionUtility.attribute(allActiveMatches);
+            this.cache.set(key, newResult);
+        }
+    } else {
+        newResult = this.attributionUtility.attribute(allActiveMatches);
+    }
+
+    // Calculate the delta
+    const added = new Map<Tap | TapFactory, TapAttribution>();
+    const removed = new Map<Tap | TapFactory, TapAttribution>();
+    const allTaps = new Set([...newResult.keys(), ...this.lastAttributedResult.keys()]);
+
+    for (const tap of allTaps) {
+        const newAttr = newResult.get(tap);
+        const oldAttr = this.lastAttributedResult.get(tap);
+
+        if (newAttr && !oldAttr) {
+            added.set(tap, newAttr);
+        } else if (!newAttr && oldAttr) {
+            removed.set(tap, oldAttr);
+        } else if (newAttr && oldAttr) {
+            const newlyWonGrips = new Set<Grip<any>>();
+            for (const grip of newAttr.attributedGrips) {
+                if (!oldAttr.attributedGrips.has(grip)) {
+                    newlyWonGrips.add(grip);
+                }
+            }
+
+            const lostGrips = new Set<Grip<any>>();
+            for (const grip of oldAttr.attributedGrips) {
+                if (!newAttr.attributedGrips.has(grip)) {
+                    lostGrips.add(grip);
+                }
+            }
+
+            if (newlyWonGrips.size > 0) {
+                added.set(tap, { ...newAttr, attributedGrips: newlyWonGrips });
+            }
+            if (lostGrips.size > 0) {
+                removed.set(tap, { ...oldAttr, attributedGrips: lostGrips });
+            }
         }
     }
-    
-    return this.attributionUtility.attribute(allActiveMatches);
+
+    this.lastAttributedResult = newResult;
+    return { added, removed };
   }
 }
