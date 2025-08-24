@@ -126,7 +126,7 @@ describe('QueryEvaluator - factories and caching', () => {
         const q1 = qb().oneOf(flag, true, 10).build();
         const q2 = qb().oneOf(flag, true, 11).build();
 
-        const ev = new QueryEvaluator([], 1000, false);
+        const ev = new QueryEvaluator([], 1000, true);
         ev.addBinding({ id: 'B1', query: q1, tap: factory, baseScore: 0 });
         ev.addBinding({ id: 'B2', query: q2, tap: factory, baseScore: 0 });
 

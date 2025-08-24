@@ -105,122 +105,54 @@ export class InvertedIndex {
 // ---[ Main Evaluator Logic ]----------------------------------------------------
 
 /**
- * Handles the attribution of output Grips to the highest-scoring producer Tap.
- * This engine is now stateful and supports incremental updates.
+ * A stateless utility to handle attribution logic.
  */
-export class OutputAttributionEngine {
-  private partitioner = new DisjointSetPartitioner<MatchedTap, Grip<any>>();
-  private activeMatches = new Map<string, MatchedTap>(); // Keyed by bindingId
-  private attributedOutputs = new Map<Grip<any>, AttributedOutput>();
-  private factoryCache = new WeakMap<TapFactory, Tap>();
+class AttributionUtility {
+    private factoryCache = new WeakMap<TapFactory, Tap>();
 
-  /**
-   * Resolves a Tap or TapFactory to a concrete Tap instance, caching factory results.
-   */
-  private getTap(tapOrFactory: Tap | TapFactory): Tap {
-    // Duck-typing to check for TapFactory
-    if (typeof (tapOrFactory as any)?.build === 'function') {
-      const factory = tapOrFactory as TapFactory;
-      if (!this.factoryCache.has(factory)) {
-        this.factoryCache.set(factory, factory.build());
-      }
-      return this.factoryCache.get(factory)!;
+    private getTap(tapOrFactory: Tap | TapFactory): Tap {
+        if (typeof (tapOrFactory as any)?.build === 'function') {
+            const factory = tapOrFactory as TapFactory;
+            if (!this.factoryCache.has(factory)) {
+                this.factoryCache.set(factory, factory.build());
+            }
+            return this.factoryCache.get(factory)!;
+        }
+        return tapOrFactory as Tap;
     }
-    return tapOrFactory as Tap;
-  }
-  
-  private reattributePartitions(partitions: Iterable<{items: Set<MatchedTap>}>): void {
-    for (const partition of partitions) {
-        // Sort with deterministic tie-breaking
-        const sortedTaps = Array.from(partition.items).sort((a, b) => 
-            b.score - a.score || a.bindingId.localeCompare(b.bindingId)
-        );
-        const seenOutputs = new Set<Grip<any>>();
 
-        for (const matchedTap of sortedTaps) {
-            const tap = this.getTap(matchedTap.tap);
-            const provides = Array.from(tap.provides);
-            
-            const novelOutputs = provides.filter(grip => !seenOutputs.has(grip));
+    public attribute(matches: MatchedTap[]): Map<Grip<any>, AttributedOutput> {
+        const attributed = new Map<Grip<any>, AttributedOutput>();
+        const partitioner = new DisjointSetPartitioner<MatchedTap, Grip<any>>();
 
-            if (novelOutputs.length > 0) {
+        for (const match of matches) {
+            const tap = this.getTap(match.tap);
+            partitioner.add(match, Array.from(tap.provides));
+        }
+
+        for (const partition of partitioner.getPartitions()) {
+            const sortedTaps = Array.from(partition).sort((a, b) => 
+                b.score - a.score || a.bindingId.localeCompare(b.bindingId)
+            );
+            const seenOutputs = new Set<Grip<any>>();
+
+            for (const matchedTap of sortedTaps) {
+                const tap = this.getTap(matchedTap.tap);
+                const novelOutputs = Array.from(tap.provides).filter(g => !seenOutputs.has(g));
+
                 for (const outputGrip of novelOutputs) {
                     seenOutputs.add(outputGrip);
-                    this.attributedOutputs.set(outputGrip, {
-                        outputGrip: outputGrip,
+                    attributed.set(outputGrip, {
+                        outputGrip,
                         producerTap: matchedTap.tap,
                         score: matchedTap.score,
-                        bindingId: matchedTap.bindingId
+                        bindingId: matchedTap.bindingId,
                     });
                 }
             }
         }
+        return attributed;
     }
-  }
-
-  /**
-   * Adds or updates a match and re-evaluates the affected partition.
-   * @param match The MatchedTap to add.
-   */
-  public addMatch(match: MatchedTap): void {
-    if (this.activeMatches.has(match.bindingId)) {
-      this.removeMatch(match.bindingId);
-    }
-
-    this.activeMatches.set(match.bindingId, match);
-    const tap = this.getTap(match.tap);
-    const changedPartition = this.partitioner.add(match, Array.from(tap.provides));
-    
-    // Clear old attributions from this partition and re-attribute
-    this.clearAttributionsForPartition(changedPartition.items);
-    this.reattributePartitions([changedPartition]);
-  }
-
-  /**
-   * Removes a match by its binding ID and re-evaluates partitions if a split occurred.
-   * @param bindingId The ID of the binding whose match should be removed.
-   */
-  public removeMatch(bindingId: string): void {
-    const matchToRemove = this.activeMatches.get(bindingId);
-    if (matchToRemove) {
-      this.activeMatches.delete(bindingId);
-      
-      const tap = this.getTap(matchToRemove.tap);
-      for (const grip of tap.provides) {
-          if (this.attributedOutputs.get(grip)?.bindingId === bindingId) {
-              this.attributedOutputs.delete(grip);
-          }
-      }
-
-      const removedFromPartition = this.partitioner.remove(matchToRemove);
-      
-      if (removedFromPartition) {
-        this.clearAttributionsForPartition(removedFromPartition.items);
-        const newPartitions = this.partitioner.repartitionDirtySets();
-        if (newPartitions.size > 0) {
-            this.reattributePartitions(newPartitions);
-        }
-      }
-    }
-  }
-
-  private clearAttributionsForPartition(items: Set<MatchedTap>): void {
-      for (const item of items) {
-          const tap = this.getTap(item.tap);
-          for (const grip of tap.provides) {
-              if (this.attributedOutputs.get(grip)?.bindingId === item.bindingId) {
-                  this.attributedOutputs.delete(grip);
-              }
-          }
-      }
-  }
-
-  /**
-   * Returns the current, complete map of attributed outputs.
-   */
-  public getAttributedOutputs(): Map<Grip<any>, AttributedOutput> {
-    return this.attributedOutputs;
-  }
 }
 
 
@@ -231,17 +163,17 @@ export class OutputAttributionEngine {
 export class QueryEvaluator {
   private bindings = new Map<string, QueryBinding>(); // Keyed by binding.id
   private invertedIndex = new InvertedIndex();
-  private attributionEngine = new OutputAttributionEngine();
   private activeMatches = new Map<string, MatchedTap>(); // Caches the last match result for each binding
+  private attributionUtility = new AttributionUtility(); // Persistent utility to maintain factory cache
 
   // Caching and evaluation strategy state
   private useHybridEvaluation: boolean;
   private useCache: boolean;
   private queryPartitioner = new DisjointSetPartitioner<Query, Grip<any>>();
   private precomputationThreshold: number;
-  private precomputedMaps = new Map<Set<Query>, TupleMap<any[], MatchedTap[]>>();
+  private precomputedMaps = new Map<Set<Query>, TupleMap<any[], Map<Grip<any>, AttributedOutput>>>();
   private runtimeEvaluationSets = new Set<Set<Query>>();
-  private cache = new TupleMap<any[], MatchedTap[]>();
+  private cache = new TupleMap<any[], Map<Grip<any>, AttributedOutput>>();
   private queryToPartition = new Map<Query, Set<Query>>();
   private partitionToKeyGrips = new Map<Set<Query>, Grip<any>[]>();
 
@@ -282,11 +214,6 @@ export class QueryEvaluator {
       this.bindings.delete(bindingId);
       this.invertedIndex.remove(binding.query);
       this.cache.clear();
-      
-      if (this.activeMatches.has(bindingId)) {
-        this.attributionEngine.removeMatch(bindingId);
-        this.activeMatches.delete(bindingId);
-      }
       
       if (this.useHybridEvaluation) {
         const removedFrom = this.queryPartitioner.remove(binding.query);
@@ -337,7 +264,7 @@ export class QueryEvaluator {
   }
 
   private precomputePartition(partition: Set<Query>): void {
-      const precomputedMap = new TupleMap<any[], MatchedTap[]>();
+      const precomputedMap = new TupleMap<any[], Map<Grip<any>, AttributedOutput>>();
       const grips = new Set<Grip<any>>();
       for (const query of partition) {
           query.conditions.forEach((_, grip) => grips.add(grip));
@@ -360,7 +287,8 @@ export class QueryEvaluator {
               const context = { getValue: (g: Grip<any>) => new Map(currentCombination).get(g) };
               const key = gripArray.map(g => context.getValue(g));
               const matches = this.evaluateQueries(partition, context);
-              precomputedMap.set(key, Array.from(matches.values()));
+              const attributed = this.attributionUtility.attribute(Array.from(matches.values()));
+              precomputedMap.set(key, attributed);
               return;
           }
           const grip = gripArray[index];
@@ -430,83 +358,24 @@ export class QueryEvaluator {
   public onGripsChanged(changedGrips: Set<Grip<any>>, context: any): Map<Grip<any>, AttributedOutput> {
     const queriesToReevaluate = this.invertedIndex.getAffectedQueries(changedGrips);
     
-    let newMatchesByBindingId: Map<string, MatchedTap>;
+    // Update active matches based on the re-evaluated queries
+    const newMatches = this.evaluateQueries(queriesToReevaluate, context);
+    for (const query of queriesToReevaluate) {
+        const associatedBindings = Array.from(this.bindings.values()).filter(b => b.query === query);
+        for (const binding of associatedBindings) {
+            const newMatch = newMatches.get(binding.id);
+            const oldMatch = this.activeMatches.get(binding.id);
 
-    if (this.useHybridEvaluation) {
-        newMatchesByBindingId = new Map<string, MatchedTap>();
-        const partitionsToProcess = new Map<Set<Query>, Set<Query>>();
-        for (const query of queriesToReevaluate) {
-            const partition = this.queryToPartition.get(query);
-            if (partition) {
-                if (!partitionsToProcess.has(partition)) {
-                    partitionsToProcess.set(partition, new Set());
-                }
-                partitionsToProcess.get(partition)!.add(query);
-            }
-        }
-
-        for (const [partition] of partitionsToProcess.entries()) {
-            const keyGrips = this.partitionToKeyGrips.get(partition) || [];
-            const key = keyGrips.map(g => context.getValue(g));
-
-            if (this.runtimeEvaluationSets.has(partition)) {
-                if (this.useCache && this.cache.has(key)) {
-                    const cachedMatches = this.cache.get(key) || [];
-                    cachedMatches.forEach(match => newMatchesByBindingId.set(match.bindingId, match));
-                } else {
-                    const matches = this.evaluateQueries(partition, context);
-                    if (this.useCache) {
-                        this.cache.set(key, Array.from(matches.values()));
-                    }
-                    matches.forEach((match, id) => newMatchesByBindingId.set(id, match));
-                }
-            } else if (this.precomputedMaps.has(partition)) {
-                const matches = this.precomputedMaps.get(partition)!.get(key) || [];
-                matches.forEach(match => newMatchesByBindingId.set(match.bindingId, match));
-            }
-        }
-    } else {
-        // Standard runtime evaluation path
-        const keyGrips = Array.from(queriesToReevaluate).flatMap(q => Array.from(q.conditions.keys()));
-        const uniqueKeyGrips = Array.from(new Set(keyGrips)).sort((a,b) => a.key.localeCompare(b.key));
-        const key = uniqueKeyGrips.map(g => context.getValue(g));
-
-        if (this.useCache && this.cache.has(key)) {
-            const cachedMatches = this.cache.get(key) || [];
-            newMatchesByBindingId = new Map(cachedMatches.map(m => [m.bindingId, m]));
-        } else {
-            newMatchesByBindingId = this.evaluateQueries(queriesToReevaluate, context);
-            if (this.useCache) {
-                this.cache.set(key, Array.from(newMatchesByBindingId.values()));
+            if (oldMatch && !newMatch) {
+                this.activeMatches.delete(binding.id);
+            } else if (newMatch) {
+                this.activeMatches.set(binding.id, newMatch);
             }
         }
     }
 
-    const bindingsToCheck = new Set<string>();
-    for (const binding of this.bindings.values()) {
-        if (queriesToReevaluate.has(binding.query)) {
-            bindingsToCheck.add(binding.id);
-        }
-    }
-
-    for (const bindingId of bindingsToCheck) {
-      const oldMatch = this.activeMatches.get(bindingId);
-      const newMatch = newMatchesByBindingId.get(bindingId);
-
-      if (oldMatch && !newMatch) {
-        this.attributionEngine.removeMatch(bindingId);
-        this.activeMatches.delete(bindingId);
-      } else if (!oldMatch && newMatch) {
-        this.attributionEngine.addMatch(newMatch);
-        this.activeMatches.set(bindingId, newMatch);
-      } else if (oldMatch && newMatch) {
-        if (oldMatch.score !== newMatch.score || oldMatch.tap !== newMatch.tap) {
-          this.attributionEngine.addMatch(newMatch);
-          this.activeMatches.set(bindingId, newMatch);
-        }
-      }
-    }
-    
-    return this.attributionEngine.getAttributedOutputs();
+    // Now, run attribution on the complete, updated set of all active matches
+    const allActiveMatches = Array.from(this.activeMatches.values());
+    return this.attributionUtility.attribute(allActiveMatches);
   }
 }
