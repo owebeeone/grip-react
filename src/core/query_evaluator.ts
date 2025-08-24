@@ -55,13 +55,14 @@ export interface MatchedTap {
 }
 
 /**
- * The final result of the attribution process for a single output Grip.
+ * The final result of the attribution process for a single Tap,
+ * containing all the output grips it has won.
  */
-export interface AttributedOutput {
-  outputGrip: Grip<any>;
+export interface TapAttribution {
   producerTap: Tap | TapFactory;
   score: number;
   bindingId: string;
+  attributedGrips: Set<Grip<any>>;
 }
 
 
@@ -125,10 +126,9 @@ export class InvertedIndex {
 // ---[ Main Evaluator Logic ]----------------------------------------------------
 
 /**
- * A stateful engine to handle attribution logic efficiently by pre-partitioning taps.
+ * A stateless utility to handle attribution logic.
  */
-class OutputAttributionEngine {
-    private partitioner = new DisjointSetPartitioner<Tap | TapFactory, Grip<any>>();
+class AttributionUtility {
     private factoryCache = new WeakMap<TapFactory, Tap>();
 
     private getTap(tapOrFactory: Tap | TapFactory): Tap {
@@ -142,32 +142,17 @@ class OutputAttributionEngine {
         return tapOrFactory as Tap;
     }
 
-    public addTap(tapOrFactory: Tap | TapFactory): void {
-        const tap = this.getTap(tapOrFactory);
-        this.partitioner.add(tapOrFactory, Array.from(tap.provides));
-    }
+    public attribute(matches: MatchedTap[]): Map<Tap | TapFactory, TapAttribution> {
+        const attributed = new Map<Tap | TapFactory, TapAttribution>();
+        const partitioner = new DisjointSetPartitioner<MatchedTap, Grip<any>>();
 
-    public removeTap(tapOrFactory: Tap | TapFactory): void {
-        this.partitioner.remove(tapOrFactory);
-    }
-
-    public attribute(matches: MatchedTap[]): Map<Grip<any>, AttributedOutput> {
-        const attributed = new Map<Grip<any>, AttributedOutput>();
-        
-        // Group matches by their pre-computed partition
-        const matchesByPartition = new Map<any, MatchedTap[]>();
         for (const match of matches) {
-            const partition = this.partitioner.getPartitionForItem(match.tap);
-            if (partition) {
-                if (!matchesByPartition.has(partition)) {
-                    matchesByPartition.set(partition, []);
-                }
-                matchesByPartition.get(partition)!.push(match);
-            }
+            const tap = this.getTap(match.tap);
+            partitioner.add(match, Array.from(tap.provides));
         }
 
-        for (const group of matchesByPartition.values()) {
-            const sortedTaps = group.sort((a, b) => 
+        for (const partition of partitioner.getPartitions()) {
+            const sortedTaps = Array.from(partition).sort((a, b) => 
                 b.score - a.score || a.bindingId.localeCompare(b.bindingId)
             );
             const seenOutputs = new Set<Grip<any>>();
@@ -176,14 +161,15 @@ class OutputAttributionEngine {
                 const tap = this.getTap(matchedTap.tap);
                 const novelOutputs = Array.from(tap.provides).filter(g => !seenOutputs.has(g));
 
-                for (const outputGrip of novelOutputs) {
-                    seenOutputs.add(outputGrip);
-                    attributed.set(outputGrip, {
-                        outputGrip,
+                if (novelOutputs.length > 0) {
+                    const tapAttribution: TapAttribution = {
                         producerTap: matchedTap.tap,
                         score: matchedTap.score,
                         bindingId: matchedTap.bindingId,
-                    });
+                        attributedGrips: new Set(novelOutputs),
+                    };
+                    attributed.set(matchedTap.tap, tapAttribution);
+                    novelOutputs.forEach(g => seenOutputs.add(g));
                 }
             }
         }
@@ -200,7 +186,7 @@ export class QueryEvaluator {
   private bindings = new Map<string, QueryBinding>(); // Keyed by binding.id
   private invertedIndex = new InvertedIndex();
   private activeMatches = new Map<string, MatchedTap>(); // Caches the last match result for each binding
-  private attributionEngine = new OutputAttributionEngine();
+  private attributionUtility = new AttributionUtility();
   private inputGripRefCounts = new Map<Grip<any>, number>();
 
   // Caching and evaluation strategy state
@@ -208,9 +194,9 @@ export class QueryEvaluator {
   private useCache: boolean;
   private queryPartitioner = new DisjointSetPartitioner<Query, Grip<any>>();
   private precomputationThreshold: number;
-  private precomputedMaps = new Map<Set<Query>, TupleMap<any[], Map<Grip<any>, AttributedOutput>>>();
+  private precomputedMaps = new Map<Set<Query>, TupleMap<any[], Map<Tap | TapFactory, TapAttribution>>>();
   private runtimeEvaluationSets = new Set<Set<Query>>();
-  private cache = new TupleMap<any[], Map<Grip<any>, AttributedOutput>>();
+  private cache = new TupleMap<any[], Map<Tap | TapFactory, TapAttribution>>();
   private queryToPartition = new Map<Query, Set<Query>>();
   private partitionToKeyGrips = new Map<Set<Query>, Grip<any>[]>();
 
@@ -239,7 +225,6 @@ export class QueryEvaluator {
 
     this.bindings.set(binding.id, binding);
     this.invertedIndex.add(binding.query);
-    this.attributionEngine.addTap(binding.tap);
     this.cache.clear();
 
     for (const grip of binding.query.conditions.keys()) {
@@ -268,7 +253,6 @@ export class QueryEvaluator {
     if (binding) {
       this.bindings.delete(bindingId);
       this.invertedIndex.remove(binding.query);
-      this.attributionEngine.removeTap(binding.tap);
       this.cache.clear();
 
       for (const grip of binding.query.conditions.keys()) {
@@ -341,7 +325,7 @@ export class QueryEvaluator {
   }
 
   private precomputePartition(partition: Set<Query>): void {
-      const precomputedMap = new TupleMap<any[], Map<Grip<any>, AttributedOutput>>();
+      const precomputedMap = new TupleMap<any[], Map<Tap | TapFactory, TapAttribution>>();
       const grips = new Set<Grip<any>>();
       for (const query of partition) {
           query.conditions.forEach((_, grip) => grips.add(grip));
@@ -364,7 +348,7 @@ export class QueryEvaluator {
               const context = { getValue: (g: Grip<any>) => new Map(currentCombination).get(g) };
               const key = gripArray.map(g => context.getValue(g));
               const matches = this.evaluateQueries(partition, context);
-              const attributed = this.attributionEngine.attribute(Array.from(matches.values()));
+              const attributed = this.attributionUtility.attribute(Array.from(matches.values()));
               precomputedMap.set(key, attributed);
               return;
           }
@@ -430,9 +414,9 @@ export class QueryEvaluator {
    * The main entry point for the evaluator, called when Grip values change.
    * @param changedGrips The set of Grips that have new values.
    * @param context The current GripContext.
-   * @returns The final map of attributed outputs.
+   * @returns The final map of attributed Taps and the grips they provide.
    */
-  public onGripsChanged(changedGrips: Set<Grip<any>>, context: any): Map<Grip<any>, AttributedOutput> {
+  public onGripsChanged(changedGrips: Set<Grip<any>>, context: any): Map<Tap | TapFactory, TapAttribution> {
     const queriesToReevaluate = this.invertedIndex.getAffectedQueries(changedGrips);
     
     // Update active matches based on the re-evaluated queries
@@ -461,12 +445,12 @@ export class QueryEvaluator {
         if (this.cache.has(key)) {
             return this.cache.get(key)!;
         } else {
-            const result = this.attributionEngine.attribute(allActiveMatches);
+            const result = this.attributionUtility.attribute(allActiveMatches);
             this.cache.set(key, result);
             return result;
         }
     }
     
-    return this.attributionEngine.attribute(allActiveMatches);
+    return this.attributionUtility.attribute(allActiveMatches);
   }
 }
