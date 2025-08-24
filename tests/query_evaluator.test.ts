@@ -73,15 +73,15 @@ describe('QueryEvaluator - tie-breaks and partitions', () => {
         const toggle = new Grip<boolean>({ name: 'toggle' });
         const t1 = makeTap('t1', [out]);
         const t2 = makeTap('t2', [out]);
-        const q1 = qb().oneOf(toggle, true, 10).build();
-        const q2 = qb().oneOf(toggle, true, 10).build();
+        const q = qb().oneOf(toggle, true, 10).build();
 
         const ev = new QueryEvaluator();
-        ev.addBinding({ id: 'A1', query: q1, tap: t1, baseScore: 0 });
-        ev.addBinding({ id: 'B1', query: q2, tap: t2, baseScore: 0 });
+        // Add B1 first to ensure order of addition doesn't determine outcome
+        ev.addBinding({ id: 'B1', query: q, tap: t2, baseScore: 0 });
+        ev.addBinding({ id: 'A1', query: q, tap: t1, baseScore: 0 });
 
         const res = ev.onGripsChanged(new Set([toggle]), ctxWith([[toggle, true]]));
-        expect(res.get(out)?.bindingId).toBe('A1');
+        expect(res.get(out)?.bindingId).toBe('A1'); // A1 comes before B1 alphabetically
     });
 
     it('merges via overlapping outputs; removing a bridge splits and reattributes', () => {
@@ -136,7 +136,7 @@ describe('QueryEvaluator - factories and caching', () => {
     });
 });
 
-describe('QueryEvaluator - edge cases', () => {
+describe('QueryEvaluator - edge cases and incremental updates', () => {
     it('does not match queries with no conditions', () => {
         const out = new Grip<string>({ name: 'out' });
         const g = new Grip<string>({ name: 'g' });
@@ -180,13 +180,68 @@ describe('QueryEvaluator - edge cases', () => {
 
         // Change to make weaker become stronger
         const qWeak2 = qb().oneOf(g, 'a', 11).build();
-        // Replace binding by removing and re-adding with same id but different score
+        // Replace binding by removing and re-adding with same id but different query/score
         ev.removeBinding('W');
         ev.addBinding({ id: 'W', query: qWeak2, tap: weaker, baseScore: 0 });
 
         res = ev.onGripsChanged(new Set([g]), ctxWith([[g, 'a']]));
         expect(res.get(out)?.bindingId).toBe('W');
     });
+
+    it('handles partial matches where some grips are undefined', () => {
+        const out = new Grip<string>({ name: 'out' });
+        const color = new Grip<string>({ name: 'color' });
+        const size = new Grip<string>({ name: 'size' });
+        const tap = makeTap('t', [out]);
+        // Query depends on both color and size
+        const q = qb().oneOf(color, 'red', 10).oneOf(size, 'L', 5).build();
+        
+        const ev = new QueryEvaluator();
+        ev.addBinding({ id: 'P', query: q, tap, baseScore: 0 });
+
+        // Context only provides color, size is undefined. The query should not match.
+        let res = ev.onGripsChanged(new Set([color, size]), ctxWith([[color, 'red']]));
+        expect(res.get(out)).toBeUndefined();
+    });
+
+    it('handles a match disappearing when a grip value changes', () => {
+        const out = new Grip<string>({ name: 'out' });
+        const color = new Grip<string>({ name: 'color' });
+        const tap = makeTap('t', [out]);
+        const q = qb().oneOf(color, 'red', 10).build();
+
+        const ev = new QueryEvaluator();
+        ev.addBinding({ id: 'M', query: q, tap, baseScore: 0 });
+
+        // First, it matches
+        let res = ev.onGripsChanged(new Set([color]), ctxWith([[color, 'red']]));
+        expect(res.get(out)?.bindingId).toBe('M');
+
+        // Then, the value changes and it no longer matches
+        res = ev.onGripsChanged(new Set([color]), ctxWith([[color, 'blue']]));
+        expect(res.get(out)).toBeUndefined();
+    });
+
+    it('handles dynamic binding registration correctly', () => {
+        const out = new Grip<string>({ name: 'out' });
+        const g = new Grip<string>({ name: 'g' });
+        const tapLow = makeTap('low', [out]);
+        const tapHigh = makeTap('high', [out]);
+        const q = qb().oneOf(g, 'x', 10).build();
+
+        const ev = new QueryEvaluator();
+        // 1. Add low-scoring binding and evaluate
+        ev.addBinding({ id: 'LOW', query: q, tap: tapLow, baseScore: 0 });
+        let res = ev.onGripsChanged(new Set([g]), ctxWith([[g, 'x']]));
+        expect(res.get(out)?.bindingId).toBe('LOW');
+
+        // 2. Add a new, higher-scoring binding for the same query
+        ev.addBinding({ id: 'HIGH', query: q, tap: tapHigh, baseScore: 5 });
+        
+        // 3. Re-evaluate
+        res = ev.onGripsChanged(new Set([g]), ctxWith([[g, 'x']]));
+        
+        // 4. Assert the new binding wins
+        expect(res.get(out)?.bindingId).toBe('HIGH');
+    });
 });
-
-

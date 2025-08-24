@@ -184,6 +184,15 @@ export class OutputAttributionEngine {
     const matchToRemove = this.activeMatches.get(bindingId);
     if (matchToRemove) {
       this.activeMatches.delete(bindingId);
+      
+      // Immediately clear any outputs attributed to the removed match.
+      const tap = this.getTap(matchToRemove.tap);
+      for (const grip of tap.provides) {
+          if (this.attributedOutputs.get(grip)?.bindingId === bindingId) {
+              this.attributedOutputs.delete(grip);
+          }
+      }
+
       const removedFromPartition = this.partitioner.remove(matchToRemove);
       
       if (removedFromPartition) {
