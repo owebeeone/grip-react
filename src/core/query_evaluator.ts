@@ -33,6 +33,11 @@ export interface AddBindingResult {
      * A set of input Grips that were not known to the evaluator before this binding was added.
      */
     newInputs: Set<Grip<any>>;
+    /**
+     * A set of input Grips that are no longer used by any query as a result of this binding update.
+     * This is only populated when an existing binding is replaced.
+     */
+    removedInputs: Set<Grip<any>>;
 }
 
 /**
@@ -219,8 +224,11 @@ export class QueryEvaluator {
    */
   public addBinding(binding: QueryBinding): AddBindingResult {
     const newInputs = new Set<Grip<any>>();
+    let removedInputs = new Set<Grip<any>>();
+
     if (this.bindings.has(binding.id)) {
-        this.removeBinding(binding.id);
+        const removeResult = this.removeBinding(binding.id);
+        removedInputs = removeResult.removedInputs;
     }
 
     this.bindings.set(binding.id, binding);
@@ -239,7 +247,7 @@ export class QueryEvaluator {
       const changedPartitionRecord = this.queryPartitioner.add(binding.query, Array.from(binding.query.conditions.keys()));
       this.updateHybridStateForPartition(changedPartitionRecord.items);
     }
-    return { newInputs };
+    return { newInputs, removedInputs };
   }
 
   /**
