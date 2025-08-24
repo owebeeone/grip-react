@@ -10,7 +10,7 @@
 import { Grip } from "./grip";
 import { Query, QueryConditions, QueryMatchScoreMap } from "./query";
 import { Tap, TapFactory } from "./tap";
-import { DisjointSetPartitioner, createCompositeKey } from "./query_utils";
+import { DisjointSetPartitioner, TupleMap } from "./query_utils";
 
 // ---[ Evaluator-Specific Interfaces ]-------------------------------------------
 
@@ -238,12 +238,12 @@ export class QueryEvaluator {
   private useHybridEvaluation: boolean;
   private queryPartitioner = new DisjointSetPartitioner<Query, Grip<any>>();
   private precomputationThreshold: number;
-  private precomputedMaps = new Map<Set<Query>, Map<string, MatchedTap[]>>();
+  private precomputedMaps = new Map<Set<Query>, TupleMap<any[], MatchedTap[]>>();
   private runtimeEvaluationSets = new Set<Set<Query>>();
   private queryToPartition = new Map<Query, Set<Query>>();
   private partitionToKeyGrips = new Map<Set<Query>, Grip<any>[]>();
 
-  constructor(initialBindings: QueryBinding[] = [], precomputationThreshold: number = 1000, useHybridEvaluation: boolean = false) {
+  constructor(initialBindings: QueryBinding[] = [], precomputationThreshold: number = 1000, useHybridEvaluation: boolean = true) {
     this.precomputationThreshold = precomputationThreshold;
     this.useHybridEvaluation = useHybridEvaluation;
     initialBindings.forEach(b => this.addBinding(b));
@@ -327,7 +327,7 @@ export class QueryEvaluator {
   }
 
   private precomputePartition(partition: Set<Query>): void {
-      const precomputedMap = new Map<string, MatchedTap[]>();
+      const precomputedMap = new TupleMap<any[], MatchedTap[]>();
       const grips = new Set<Grip<any>>();
       for (const query of partition) {
           query.conditions.forEach((_, grip) => grips.add(grip));
@@ -348,7 +348,7 @@ export class QueryEvaluator {
       const generateCombinations = (index: number, currentCombination: [Grip<any>, any][]) => {
           if (index === gripArray.length) {
               const context = { getValue: (g: Grip<any>) => new Map(currentCombination).get(g) };
-              const key = createCompositeKey(gripArray.map(g => context.getValue(g)));
+              const key = gripArray.map(g => context.getValue(g));
               const matches = this.evaluateQueries(partition, context);
               precomputedMap.set(key, Array.from(matches.values()));
               return;
@@ -441,7 +441,7 @@ export class QueryEvaluator {
                 matches.forEach((match, id) => newMatchesByBindingId.set(id, match));
             } else if (this.precomputedMaps.has(partition)) {
                 const keyGrips = this.partitionToKeyGrips.get(partition)!;
-                const key = createCompositeKey(keyGrips.map(g => context.getValue(g)));
+                const key = keyGrips.map(g => context.getValue(g));
                 const matches = this.precomputedMaps.get(partition)!.get(key) || [];
                 matches.forEach(match => newMatchesByBindingId.set(match.bindingId, match));
             }
