@@ -4,8 +4,9 @@ import { Grip, GripRegistry } from '../src/core/grip';
 import { GripContext } from '../src/core/context';
 import { Tap, TapFactory } from '../src/core/tap';
 import { SimpleResolver } from '../src/core/tap_resolver';
-import { EvaluationDelta, TapAttribution } from '../src/core/query_evaluator';
+import { EvaluationDelta, TapAttribution, QueryEvaluator, QueryBinding } from '../src/core/query_evaluator';
 import { MultiAtomValueTap } from '../src/core/atom_tap';
+import { QueryBuilderFactory } from '../src/core/query';
 
 describe('SimpleResolver', () => {
     let grok: Grok;
@@ -14,6 +15,7 @@ describe('SimpleResolver', () => {
     // Grips
     const gripRegistry = new GripRegistry();
     const gripA = gripRegistry.defineGrip<string>('a', 'a');
+    const gripB = gripRegistry.defineGrip<string>('b', 'b');
     const gripM = gripRegistry.defineGrip<string>('m', 'm');
     const gripN = gripRegistry.defineGrip<string>('n', 'n');
     const gripO = gripRegistry.defineGrip<string>('o', 'o');
@@ -280,7 +282,6 @@ describe('SimpleResolver', () => {
             const consumer = grok.createContext(context, 0, 'consumer');
             
             // Initial state
-            const gripB = gripRegistry.defineGrip<string>('b', 'b');
             const tapA = new MultiAtomValueTap([gripA, gripM], new Map([[gripA, 'valA'], [gripM, 'valA']])); // provides gripA, gripM
             const tapB = new MultiAtomValueTap([gripB, gripN], new Map([[gripB, 'valB'], [gripN, 'valB']])); // provides gripB, gripN
             registerProducer(context, tapA);
@@ -345,6 +346,76 @@ describe('SimpleResolver', () => {
             // The value should be updated after the new producer is in place and produces.
             grok.flush();
             expect(value).toBe('valueFromB');
+        });
+
+        it('should correctly process a real delta from a QueryEvaluator', () => {
+            const qb = () => new QueryBuilderFactory().newQuery();
+            const ctxWith = (entries: Array<[Grip<any>, any]>) => {
+                const m = new Map<Grip<any>, any>(entries);
+                return { getValue: (g: Grip<any>) => m.get(g) };
+            };
+
+            // Grips
+            const controlGrip = new Grip<string>({ name: 'control' });
+
+            // Taps
+            const tapA = new MultiAtomValueTap([gripA, gripM], new Map([[gripA, 'valA'], [gripM, 'valA']]));
+            const tapB = new MultiAtomValueTap([gripB, gripN], new Map([[gripB, 'valB'], [gripN, 'valB']]));
+            const tapC = new MultiAtomValueTap([gripM, gripN], new Map([[gripM, 'valC'], [gripN, 'valC']]));
+
+            // Queries
+            const q_base = qb().oneOf(controlGrip, 'base', 10).build();
+            const q_transfer = qb().oneOf(controlGrip, 'transfer', 20).build();
+
+            // Setup
+            const evaluator = new QueryEvaluator();
+            const context = grok.createContext(grok.rootContext, 0, 'ctx');
+            const consumer = grok.createContext(context, 0, 'consumer');
+            addConsumer(consumer, gripA);
+            addConsumer(consumer, gripM);
+            addConsumer(consumer, gripB);
+            addConsumer(consumer, gripN);
+
+            // 1. Establish initial state with tapA and tapB active
+            evaluator.addBinding({ id: 'A', query: q_base, tap: tapA, baseScore: 0 });
+            evaluator.addBinding({ id: 'B', query: q_base, tap: tapB, baseScore: 0 });
+            
+            const initialDelta = evaluator.onGripsChanged(new Set([controlGrip]), ctxWith([[controlGrip, 'base']]));
+            resolver.applyProducerDelta(context, initialDelta);
+
+            expect(getResolvedTap(consumer, gripA)).toBe(tapA);
+            expect(getResolvedTap(consumer, gripM)).toBe(tapA);
+            expect(getResolvedTap(consumer, gripB)).toBe(tapB);
+            expect(getResolvedTap(consumer, gripN)).toBe(tapB);
+
+            // 2. Introduce tapC with a higher score to trigger a transfer
+            evaluator.addBinding({ id: 'C', query: q_transfer, tap: tapC, baseScore: 0 });
+            const transferDelta = evaluator.onGripsChanged(new Set([controlGrip]), ctxWith([[controlGrip, 'transfer']]));
+            
+            // This is the real test: apply the transfer delta
+            resolver.applyProducerDelta(context, transferDelta);
+            
+            // 3. Assert the final state after transfer
+            expect(getResolvedTap(consumer, gripA)).toBeUndefined(); // tapA is no longer active
+            expect(getResolvedTap(consumer, gripB)).toBeUndefined(); // tapB is no longer active
+            expect(getResolvedTap(consumer, gripM)).toBe(tapC); // Transferred
+            expect(getResolvedTap(consumer, gripN)).toBe(tapC); // Transferred
+
+            // 4. Remove binding B and re-evaluate. This should be a no-op as B is not active.
+            evaluator.removeBinding('B');
+            const removalDelta = evaluator.onGripsChanged(new Set(), ctxWith([[controlGrip, 'transfer']]));
+
+            // This should be an empty delta
+            expect(removalDelta.added.size).toBe(0);
+            expect(removalDelta.removed.size).toBe(0);
+            
+            resolver.applyProducerDelta(context, removalDelta);
+
+            // 5. Assert the state is unchanged
+            expect(getResolvedTap(consumer, gripA)).toBeUndefined();
+            expect(getResolvedTap(consumer, gripB)).toBeUndefined();
+            expect(getResolvedTap(consumer, gripM)).toBe(tapC);
+            expect(getResolvedTap(consumer, gripN)).toBe(tapC);
         });
     });
 });
