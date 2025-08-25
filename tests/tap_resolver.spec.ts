@@ -2,25 +2,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { Grok } from '../src/core/grok';
 import { Grip, GripRegistry } from '../src/core/grip';
 import { GripContext } from '../src/core/context';
-import { Tap } from '../src/core/tap';
+import { Tap, TapFactory } from '../src/core/tap';
 import { SimpleResolver } from '../src/core/tap_resolver';
-import { BaseTap } from '../src/core/base_tap';
-
-class MockTap extends BaseTap {
-    constructor(provides: Grip<any>[]) {
-        super({ provides });
-    }
-    produce(opts?: { destContext?: GripContext; }): void {
-        // no-op
-    }
-    // Correct implementation for abstract optional methods from BaseTap
-    produceOnParams(paramGrip: Grip<any>): void {
-        // no-op for tests
-    }
-    produceOnDestParams(destContext: GripContext | undefined, paramGrip: Grip<any>): void {
-        // no-op for tests
-    }
-}
+import { EvaluationDelta, TapAttribution } from '../src/core/query_evaluator';
+import { MultiAtomValueTap } from '../src/core/atom_tap';
 
 describe('SimpleResolver', () => {
     let grok: Grok;
@@ -45,6 +30,13 @@ describe('SimpleResolver', () => {
         const producerNode = consumerNode.getResolvedProviders().get(grip);
         return producerNode?.get_context()?.id;
     };
+
+    const getResolvedTap = (consumer: GripContext, grip: Grip<any>): Tap | undefined => {
+        const consumerNode = grok.ensureNode(consumer);
+        const producerNode = consumerNode.getResolvedProviders().get(grip);
+        const producerRecord = producerNode?.get_producers().get(grip);
+        return producerRecord?.tap;
+    };
     
     const registerProducer = (context: GripContext, tap: Tap) => {
         resolver.addProducer(context, tap);
@@ -57,7 +49,7 @@ describe('SimpleResolver', () => {
     it('Scenario 1: Simple Case', () => {
         const ca = grok.createContext(grok.rootContext, 0, 'ca');
         const cb = grok.createContext(ca, 0, 'cb');
-        registerProducer(ca, new MockTap([gripA]));
+        registerProducer(ca, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cb, gripA);
         expect(getResolvedContextId(cb, gripA)).toBe(ca.id);
     });
@@ -66,7 +58,7 @@ describe('SimpleResolver', () => {
         const ca = grok.createContext(grok.rootContext, 0, 'ca');
         const cb = grok.createContext(ca, 0, 'cb');
         const cc = grok.createContext(cb, 0, 'cc');
-        registerProducer(ca, new MockTap([gripA]));
+        registerProducer(ca, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cc, gripA);
         expect(getResolvedContextId(cc, gripA)).toBe(ca.id);
     });
@@ -75,8 +67,8 @@ describe('SimpleResolver', () => {
         const ca = grok.createContext(grok.rootContext, 0, 'ca');
         const cb = grok.createContext(ca, 0, 'cb');
         const cc = grok.createContext(cb, 0, 'cc');
-        registerProducer(ca, new MockTap([gripA]));
-        registerProducer(cb, new MockTap([gripA]));
+        registerProducer(ca, new MultiAtomValueTap([gripA], undefined));
+        registerProducer(cb, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cc, gripA);
         expect(getResolvedContextId(cc, gripA)).toBe(cb.id);
     });
@@ -87,8 +79,8 @@ describe('SimpleResolver', () => {
         const cc = grok.createContext(ca, 0, 'cc');
         const cd = grok.createContext(cc, 0, 'cd');
         cd.addParent(cb, 1); // Lower priority
-        registerProducer(cb, new MockTap([gripA]));
-        registerProducer(cc, new MockTap([gripA]));
+        registerProducer(cb, new MultiAtomValueTap([gripA], undefined));
+        registerProducer(cc, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cd, gripA);
         expect(getResolvedContextId(cd, gripA)).toBe(cc.id);
     });
@@ -97,8 +89,8 @@ describe('SimpleResolver', () => {
         const ca = grok.createContext(grok.rootContext, 0, 'ca');
         const cb = grok.createContext(ca, 0, 'cb');
         const cc = grok.createContext(cb, 0, 'cc');
-        registerProducer(ca, new MockTap([gripM, gripN, gripO]));
-        registerProducer(cb, new MockTap([gripN]));
+        registerProducer(ca, new MultiAtomValueTap([gripM, gripN, gripO], undefined));
+        registerProducer(cb, new MultiAtomValueTap([gripN], undefined));
         addConsumer(cc, gripN);
         addConsumer(cc, gripO);
         expect(getResolvedContextId(cc, gripN)).toBe(cb.id);
@@ -110,8 +102,8 @@ describe('SimpleResolver', () => {
         const cb = grok.createContext(grok.rootContext, 0, 'cb');
         const cc = grok.createContext(undefined, 0, 'cc');
         cc.addParent(ca, 1);
-        registerProducer(ca, new MockTap([gripA]));
-        registerProducer(cb, new MockTap([gripA]));
+        registerProducer(ca, new MultiAtomValueTap([gripA], undefined));
+        registerProducer(cb, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cc, gripA);
         expect(getResolvedContextId(cc, gripA)).toBe(ca.id);
         cc.addParent(cb, 0); // Add higher-priority parent
@@ -124,8 +116,8 @@ describe('SimpleResolver', () => {
         const cb = grok.createContext(grok.rootContext, 0, 'cb');
         const cc = grok.createContext(ca, 0, 'cc');
         cc.addParent(cb, 1);
-        registerProducer(ca, new MockTap([gripA]));
-        registerProducer(cb, new MockTap([gripA]));
+        registerProducer(ca, new MultiAtomValueTap([gripA], undefined));
+        registerProducer(cb, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cc, gripA);
         expect(getResolvedContextId(cc, gripA)).toBe(ca.id);
         // Remove the parent link using grok's API (or a simulated equivalent if not directly available)
@@ -140,9 +132,9 @@ describe('SimpleResolver', () => {
         const cb = grok.createContext(grok.rootContext, 0, 'cb');
         const cc = grok.createContext(ca, 0, 'cc');
         cc.addParent(cb, 1);
-        const tapA = new MockTap([gripA]);
+        const tapA = new MultiAtomValueTap([gripA], undefined);
         registerProducer(ca, tapA);
-        registerProducer(cb, new MockTap([gripA]));
+        registerProducer(cb, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cc, gripA);
         expect(getResolvedContextId(cc, gripA)).toBe(ca.id);
         grok.unregisterTap(tapA); // Use the public API for unregistering tap
@@ -154,10 +146,10 @@ describe('SimpleResolver', () => {
     it('Scenario 9: Adding a Shadowing Producer', () => {
         const ca = grok.createContext(grok.rootContext, 0, 'ca');
         const cb = grok.createContext(ca, 0, 'cb');
-        registerProducer(ca, new MockTap([gripA]));
+        registerProducer(ca, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cb, gripA);
         expect(getResolvedContextId(cb, gripA)).toBe(ca.id);
-        const tapB = new MockTap([gripA]);
+        const tapB = new MultiAtomValueTap([gripA], undefined);
         registerProducer(cb, tapB);
         resolver.addProducer(cb, tapB);
         expect(getResolvedContextId(cb, gripA)).toBe(cb.id);
@@ -172,7 +164,7 @@ describe('SimpleResolver', () => {
 
     it('Scenario 11: Consumer in Same Context as Producer', () => {
         const ca = grok.createContext(grok.rootContext, 0, 'ca');
-        registerProducer(ca, new MockTap([gripA]));
+        registerProducer(ca, new MultiAtomValueTap([gripA], undefined));
         addConsumer(ca, gripA);
         expect(getResolvedContextId(ca, gripA)).toBe(ca.id);
     });
@@ -180,7 +172,7 @@ describe('SimpleResolver', () => {
     it('Scenario 12: Removing a Consumer', () => {
         const ca = grok.createContext(grok.rootContext, 0, 'ca');
         const cb = grok.createContext(ca, 0, 'cb');
-        registerProducer(ca, new MockTap([gripA]));
+        registerProducer(ca, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cb, gripA);
         expect(getResolvedContextId(cb, gripA)).toBe(ca.id);
         resolver.removeConsumer(cb, gripA);
@@ -190,8 +182,8 @@ describe('SimpleResolver', () => {
     it('Scenario 13: Fallback to Ancestor After Self-Producer Removal', () => {
         const cb = grok.createContext(grok.rootContext, 0, 'cb');
         const ca = grok.createContext(cb, 0, 'ca');
-        registerProducer(cb, new MockTap([gripA]));
-        const tapA = new MockTap([gripA]);
+        registerProducer(cb, new MultiAtomValueTap([gripA], undefined));
+        const tapA = new MultiAtomValueTap([gripA], undefined);
         registerProducer(ca, tapA);
         addConsumer(ca, gripA);
         expect(getResolvedContextId(ca, gripA)).toBe(ca.id);
@@ -205,8 +197,8 @@ describe('SimpleResolver', () => {
         const cb = grok.createContext(grok.rootContext, 0, 'cb');
         const cd = grok.createContext(rootCa, 0, 'cd');
         cd.addParent(cb, 1);
-        registerProducer(rootCa, new MockTap([gripA]));
-        registerProducer(cb, new MockTap([gripA]));
+        registerProducer(rootCa, new MultiAtomValueTap([gripA], undefined));
+        registerProducer(cb, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cd, gripA);
         // Even though rootCa has priority 0, the non-root cb is checked first.
         expect(getResolvedContextId(cd, gripA)).toBe(cb.id);
@@ -218,8 +210,8 @@ describe('SimpleResolver', () => {
         const cc = grok.createContext(rootCa, 0, 'cc');
         const cd = grok.createContext(cb, 0, 'cd');
         cd.addParent(cc);
-        registerProducer(rootCa, new MockTap([gripA]));
-        registerProducer(cc, new MockTap([gripA]));
+        registerProducer(rootCa, new MultiAtomValueTap([gripA], undefined));
+        registerProducer(cc, new MultiAtomValueTap([gripA], undefined));
         addConsumer(cd, gripA);
         // The producer in `cc` is found first in the BFS.
         expect(getResolvedContextId(cd, gripA)).toBe(cc.id);
@@ -230,8 +222,8 @@ describe('SimpleResolver', () => {
         const cb = grok.createContext(ca, 0, 'cb');
         const cc = grok.createContext(cb, 0, 'cc');
         const cd = grok.createContext(cc, 0, 'cd');
-        const tapB = new MockTap([gripA]);
-        registerProducer(ca, new MockTap([gripA]));
+        const tapB = new MultiAtomValueTap([gripA], undefined);
+        registerProducer(ca, new MultiAtomValueTap([gripA], undefined));
         registerProducer(cb, tapB);
         addConsumer(cc, gripA);
         addConsumer(cd, gripA);
@@ -241,5 +233,118 @@ describe('SimpleResolver', () => {
         // resolver.removeProducer(cb, tapB); // This is now triggered by unregisterTap
         expect(getResolvedContextId(cc, gripA)).toBe(ca.id);
         expect(getResolvedContextId(cd, gripA)).toBe(ca.id);
+    });
+
+    describe('applyProducerDelta', () => {
+        it('should add a new tap and its grips, equivalent to addProducer', () => {
+            const context = grok.createContext(grok.rootContext, 0, 'ctx');
+            const consumer = grok.createContext(context, 0, 'consumer');
+            
+            const tapA = new MultiAtomValueTap([gripA], new Map([[gripA, 'valA']]));
+            const delta: EvaluationDelta = {
+                added: new Map<Tap | TapFactory, TapAttribution>([
+                    [tapA, { producerTap: tapA, score: 1, bindingId: 'a', attributedGrips: new Set([gripA]) }]
+                ]),
+                removed: new Map()
+            };
+
+            resolver.applyProducerDelta(context, delta);
+
+            addConsumer(consumer, gripA);
+            expect(getResolvedContextId(consumer, gripA)).toBe(context.id);
+            expect(getResolvedTap(consumer, gripA)).toBe(tapA);
+        });
+
+        it('should remove an existing tap and its grips, equivalent to removeProducer', () => {
+            const context = grok.createContext(grok.rootContext, 0, 'ctx');
+            const consumer = grok.createContext(context, 0, 'consumer');
+            const tapA = new MultiAtomValueTap([gripA], new Map([[gripA, 'valA']]));
+
+            registerProducer(context, tapA);
+            addConsumer(consumer, gripA);
+            expect(getResolvedContextId(consumer, gripA)).toBe(context.id);
+
+            const delta: EvaluationDelta = {
+                added: new Map(),
+                removed: new Map<Tap | TapFactory, TapAttribution>([
+                    [tapA, { producerTap: tapA, score: 1, bindingId: 'a', attributedGrips: new Set([gripA]) }]
+                ])
+            };
+
+            resolver.applyProducerDelta(context, delta);
+            expect(getResolvedContextId(consumer, gripA)).toBeUndefined();
+        });
+
+        it('should handle complex grip transfers between taps', () => {
+            const context = grok.createContext(grok.rootContext, 0, 'ctx');
+            const consumer = grok.createContext(context, 0, 'consumer');
+            
+            // Initial state
+            const gripB = gripRegistry.defineGrip<string>('b', 'b');
+            const tapA = new MultiAtomValueTap([gripA, gripM], new Map([[gripA, 'valA'], [gripM, 'valA']])); // provides gripA, gripM
+            const tapB = new MultiAtomValueTap([gripB, gripN], new Map([[gripB, 'valB'], [gripN, 'valB']])); // provides gripB, gripN
+            registerProducer(context, tapA);
+            registerProducer(context, tapB);
+
+            addConsumer(consumer, gripA);
+            addConsumer(consumer, gripM);
+            addConsumer(consumer, gripB);
+            addConsumer(consumer, gripN);
+
+            expect(getResolvedTap(consumer, gripA)).toBe(tapA);
+            expect(getResolvedTap(consumer, gripM)).toBe(tapA);
+            expect(getResolvedTap(consumer, gripB)).toBe(tapB);
+            expect(getResolvedTap(consumer, gripN)).toBe(tapB);
+
+            // Delta introduces tapC which takes over gripM from tapA and gripN from tapB
+            const tapC = new MultiAtomValueTap([gripM, gripN], new Map([[gripM, 'valC'], [gripN, 'valC']]));
+            const delta: EvaluationDelta = {
+                added: new Map<Tap | TapFactory, TapAttribution>([
+                    [tapC, { producerTap: tapC, score: 1, bindingId: 'c', attributedGrips: new Set([gripM, gripN]) }]
+                ]),
+                removed: new Map<Tap | TapFactory, TapAttribution>([
+                    [tapA, { producerTap: tapA, score: 1, bindingId: 'a', attributedGrips: new Set([gripM]) }],
+                    [tapB, { producerTap: tapB, score: 1, bindingId: 'b', attributedGrips: new Set([gripN]) }]
+                ])
+            };
+            
+            resolver.applyProducerDelta(context, delta);
+
+            // Verify final state
+            expect(getResolvedTap(consumer, gripA)).toBe(tapA); // Unchanged
+            expect(getResolvedTap(consumer, gripB)).toBe(tapB); // Unchanged
+            expect(getResolvedTap(consumer, gripM)).toBe(tapC); // Transferred
+            expect(getResolvedTap(consumer, gripN)).toBe(tapC); // Transferred
+        });
+
+        it('should update drip values on grip transfer', () => {
+            const context = grok.createContext(grok.rootContext, 0, 'ctx');
+            const consumerCtx = grok.createContext(context, 0, 'consumer');
+            const consumerDrip = consumerCtx.getOrCreateConsumer(gripA);
+
+            const tapA = new MultiAtomValueTap([gripA], new Map([[gripA, 'valueFromA']]));
+            registerProducer(context, tapA);
+
+            let value: any;
+            consumerDrip.subscribe(v => { value = v; });
+            
+            tapA.produce(); // Initial value
+            grok.flush();
+            expect(value).toBe('valueFromA');
+            
+            // Delta introduces tapB which takes over gripA
+            const tapB = new MultiAtomValueTap([gripA], new Map([[gripA, 'valueFromB']]));
+            const delta: EvaluationDelta = {
+                added: new Map([[tapB, { producerTap: tapB, score: 1, bindingId: 'b', attributedGrips: new Set([gripA]) }]]),
+                removed: new Map([[tapA, { producerTap: tapA, score: 1, bindingId: 'a', attributedGrips: new Set([gripA]) }]])
+            };
+            
+            resolver.applyProducerDelta(context, delta);
+            tapB.produce();
+
+            // The value should be updated after the new producer is in place and produces.
+            grok.flush();
+            expect(value).toBe('valueFromB');
+        });
     });
 });

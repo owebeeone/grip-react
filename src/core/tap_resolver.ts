@@ -2,8 +2,8 @@ import { Grip } from "./grip";
 import { GripContext } from "./context";
 import { Tap, TapFactory } from "./tap";
 import { Grok } from "./grok";
-import { GripContextNode } from "./graph";
-import { EvaluationDelta } from "./query_evaluator";
+import { GripContextNode, ProducerRecord } from "./graph";
+import { EvaluationDelta, TapAttribution } from "./query_evaluator";
 
 function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
   const result = new Set<T>();
@@ -99,68 +99,207 @@ export class SimpleResolver implements IGripResolver {
     }
 
     applyProducerDelta(context: GripContext | GripContextNode, delta: EvaluationDelta): void {
-        // TODO: Implement this...
         const node = (context.kind === "GripContext") ? context.getNode() : context;
 
-        /*
-        This method applies changes to the producers (taps) within a specific context based on an `EvaluationDelta`.
+        // --- Step 1: Analyze and Validate Delta ---
+        const { added, removed, transferred, finalProducers } = this.analyzeDelta(node, delta);
 
-        A key constraint is that any single grip can only be provided by *one* tap 
-        within a given context. The logic must first validate the delta to ensure it 
-        doesn't assign a single grip to multiple taps and raise an error if it does.
+        // Validate that no grip is provided by more than one tap in the final configuration
+        const gripToTapMap = new Map<Grip<any>, Tap | TapFactory>();
+        for (const [tap, attribution] of finalProducers.entries()) {
+            for (const grip of attribution.attributedGrips) {
+                if (gripToTapMap.has(grip)) {
+                    const existingTap = gripToTapMap.get(grip)!;
+                    throw new Error(
+                        `Invalid Delta: Grip '${grip.key}' is assigned to multiple taps ('${(existingTap as any).id}' and '${(tap as any).id}') in the same context.`
+                    );
+                }
+                gripToTapMap.set(grip, tap);
+            }
+        }
 
-        The update is an atomic operation. All structural changes to the producer 
-        graph are made first, and only then are affected consumers re-resolved. 
-        This prevents consumers from resolving to an inconsistent, intermediate state.
+        // --- Step 2: Collect all affected consumers before making any changes ---
+        const consumersToReResolve = new Set<{ destNode: GripContextNode; grip: Grip<any> }>();
 
-        The process involves several steps:
+        // Collect from transfers
+        for (const [grip, { from }] of transferred.entries()) {
+            const oldProducerRecord = node.getProducerRecord(from);
+            if (oldProducerRecord) {
+                this.collectConsumers(oldProducerRecord, grip, consumersToReResolve);
+            }
+        }
+        
+        // Collect from removals
+        for (const [tap, grips] of removed.entries()) {
+            const producerRecord = node.getProducerRecord(tap);
+            if (producerRecord) {
+                for (const grip of grips) {
+                    this.collectConsumers(producerRecord, grip, consumersToReResolve);
+                }
+            }
+        }
+        
+        // Collect consumers for newly added grips from all descendants
+        if (added.size > 0) {
+            const newlyAddedGrips = new Set<Grip<any>>();
+            added.forEach(grips => grips.forEach(g => newlyAddedGrips.add(g)));
+            
+            const descendants = [node, ...this.getDescendants(node)];
+            for (const descendant of descendants) {
+                for (const [grip] of descendant.get_consumers()) {
+                    if (newlyAddedGrips.has(grip)) {
+                        consumersToReResolve.add({ destNode: descendant, grip });
+                    }
+                }
+            }
+        }
 
-        1.  **Analyze and Validate Delta:**
-            -   Compare the `EvaluationDelta` with the current state of producers 
-                in the context node to determine three sets of changes: grips to 
-                add, grips to remove, and grips to transfer.
-            -   Validate that the resulting producer configuration does not assign 
-                any single grip to more than one tap. If it does, raise an error.
+        // --- Step 3: Apply all structural changes to the graph ---
 
-        2.  **Apply Structural Changes & Collect Affected Consumers:**
-            -   Iterate through the identified changes (removals, transfers, additions) 
-                and update the context node's producer mappings (`producers` and 
-                `producerByTap`).
-            -   During this process, for every grip that is removed or transferred, 
-                collect all of its current consumers. For every grip that is added, 
-                collect all potential consumers in the current context and its 
-                descendants. This creates a final, unique set of `(consumer_node, grip)` 
-                pairs that need re-resolution.
+        // Process transfers
+        for (const [grip, { from, to }] of transferred.entries()) {
+            const oldProducerRecord = node.getProducerRecord(from);
+            const newProducerRecord = node.getOrCreateProducerRecord(to as Tap, (to as Tap).provides);
+            
+            oldProducerRecord?.outputs.delete(grip);
+            newProducerRecord.outputs.add(grip);
+            node.recordProducer(grip, newProducerRecord); // This overwrites the old producer for this grip
+        }
 
-        3.  **Trigger Batched Re-resolution:**
-            -   Iterate over the collected set of affected consumer-grip pairs and 
-                call `resolveConsumer()` for each one. This notifies them of the 
-                changes, allowing them to link to new producers or revert to 
-                default values.
+        // Process removals
+        for (const [tap, grips] of removed.entries()) {
+            const producerRecord = node.getProducerRecord(tap);
+            if (producerRecord) {
+                for (const grip of grips) {
+                    if (node.get_producers().get(grip) === producerRecord) {
+                        node.get_producers().delete(grip);
+                    }
+                    producerRecord.outputs.delete(grip);
+                }
+            }
+        }
+        
+        // Process additions
+        for (const [tap, grips] of added.entries()) {
+            const producerRecord = node.getOrCreateProducerRecord(tap as Tap, (tap as Tap).provides);
+            for (const grip of grips) {
+                producerRecord.outputs.add(grip);
+                node.recordProducer(grip, producerRecord);
+            }
+        }
+        
+        // --- Step 4: Trigger Batched Re-resolution ---
+        for (const { destNode, grip } of consumersToReResolve) {
+            // By explicitly unresolving first, we force the resolver to find the
+            // new best producer, even if the producer node hasn't changed (e.g., a transfer).
+            this.unresolveConsumer(destNode, grip);
+            this.resolveConsumer(destNode, grip);
+        }
 
-        4.  **Cleanup:**
-            -   Remove any taps that no longer provide any grips in this context.
+        // --- Step 5: Cleanup ---
+        // Remove taps that no longer provide any grips
+        const tapsInDelta = new Set([...delta.added.keys(), ...delta.removed.keys()]);
+        for (const tap of tapsInDelta) {
+            const producerRecord = node.getProducerRecord(tap);
+            // If the producer record still exists but provides no outputs, remove it.
+            if (producerRecord && producerRecord.outputs.size === 0) {
+                node._removeTap(tap);
+            }
+        }
+    }
 
-        **Core Operations (during Step 2):**
+    private analyzeDelta(node: GripContextNode, delta: EvaluationDelta) {
+        // 1. Determine the current state of producers
+        const currentProducers = new Map<Tap | TapFactory, Set<Grip<any>>>();
+        for (const [grip, producerRecord] of node.get_producers().entries()) {
+            const tap = producerRecord.tapFactory ?? producerRecord.tap;
+            if (!currentProducers.has(tap)) {
+                currentProducers.set(tap, new Set());
+            }
+            currentProducers.get(tap)!.add(grip);
+        }
 
-        -   **For a Grip to Transfer:**
-            1.  Identify the outgoing producer (`tap_A`) and incoming producer (`tap_B`).
-            2.  Collect all current consumers of the grip from `tap_A`.
-            3.  Update the context node's producer maps: remove the grip from `tap_A`'s 
-                record and add it to `tap_B`'s.
+        // 2. Calculate the final (desired) state based on the delta
+        const finalProducers = new Map<Tap | TapFactory, TapAttribution>();
+        const tempFinalGrips = new Map<Tap | TapFactory, Set<Grip<any>>>();
 
-        -   **For a Grip to Add:**
-            1.  Identify the new tap providing the grip.
-            2.  Update the context node's producer maps to associate the grip with 
-                the new tap.
-            3.  Collect all consumers for this grip in the current context and its 
-                descendants, as they are all potentially affected.
+        // Start with current state
+        for(const [tap, grips] of currentProducers.entries()) {
+            const rec = node.getProducerRecord(tap)!; // Should exist
+            tempFinalGrips.set(tap, new Set(grips));
+            finalProducers.set(tap, { producerTap: tap, score: 0, bindingId: '', attributedGrips: tempFinalGrips.get(tap)! });
+        }
 
-        -   **For a Grip to Remove:**
-            1.  Identify the tap that is no longer providing the grip.
-            2.  Collect all current consumers of the grip from that tap.
-            3.  Remove the producer mapping for the grip from the context node.
-        */
+        // Apply removals from delta
+        for (const [tap, attribution] of delta.removed.entries()) {
+            const finalGrips = tempFinalGrips.get(tap);
+            if (finalGrips) {
+                for (const grip of attribution.attributedGrips) {
+                    finalGrips.delete(grip);
+                }
+                if (finalGrips.size === 0) {
+                    tempFinalGrips.delete(tap);
+                    finalProducers.delete(tap);
+                }
+            }
+        }
+        // Apply additions from delta
+        for (const [tap, attribution] of delta.added.entries()) {
+            if (!tempFinalGrips.has(tap)) {
+                tempFinalGrips.set(tap, new Set());
+            }
+            const finalGrips = tempFinalGrips.get(tap)!;
+            for (const grip of attribution.attributedGrips) {
+                finalGrips.add(grip);
+            }
+            finalProducers.set(tap, { ...attribution, attributedGrips: finalGrips });
+        }
+
+        // 3. Compare current and final states to determine added, removed, and transferred
+        const added = new Map<Tap | TapFactory, Set<Grip<any>>>();
+        const removed = new Map<Tap | TapFactory, Set<Grip<any>>>();
+        const transferred = new Map<Grip<any>, { from: Tap | TapFactory, to: Tap | TapFactory }>();
+
+        const allGrips = new Set<Grip<any>>();
+        currentProducers.forEach(grips => grips.forEach(g => allGrips.add(g)));
+        tempFinalGrips.forEach(grips => grips.forEach(g => allGrips.add(g)));
+
+        for (const grip of allGrips) {
+            const oldTap = this.findTapForGrip(grip, currentProducers);
+            const newTap = this.findTapForGrip(grip, tempFinalGrips);
+
+            if (oldTap && !newTap) {
+                if (!removed.has(oldTap)) removed.set(oldTap, new Set());
+                removed.get(oldTap)!.add(grip);
+            } else if (!oldTap && newTap) {
+                if (!added.has(newTap)) added.set(newTap, new Set());
+                added.get(newTap)!.add(grip);
+            } else if (oldTap && newTap && oldTap !== newTap) {
+                transferred.set(grip, { from: oldTap, to: newTap });
+            }
+        }
+        return { added, removed, transferred, finalProducers };
+    }
+
+    private findTapForGrip(grip: Grip<any>, map: Map<Tap | TapFactory, Set<Grip<any>>>): Tap | TapFactory | undefined {
+        for (const [tap, grips] of map.entries()) {
+            if (grips.has(grip)) {
+                return tap;
+            }
+        }
+        return undefined;
+    }
+    
+    private collectConsumers(
+        producerRecord: ProducerRecord, 
+        grip: Grip<any>, 
+        consumersToReResolve: Set<{ destNode: GripContextNode; grip: Grip<any> }>
+    ) {
+        for (const destination of producerRecord.getDestinations().values()) {
+            if (destination.getGrips().has(grip)) {
+                consumersToReResolve.add({ destNode: destination.getContextNode(), grip });
+            }
+        }
     }
 
     addProducer(context: GripContext, tap: Tap): void {

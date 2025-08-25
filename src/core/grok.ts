@@ -79,6 +79,10 @@ export class Grok {
     this.taskQueue.submitWeak(taskQueueCallback, 0, handleHolder);
   }
 
+  getTaskQueue(): TaskQueue {
+    return this.taskQueue;
+  }
+
   // Drain the internal task queue (useful for tests to assert post-update state)
   flush(): void {
     this.taskQueue.flush();
