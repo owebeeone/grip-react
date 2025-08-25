@@ -124,6 +124,22 @@ export class SimpleResolver implements IGripResolver {
         Once the taps are all in place we need to run a resolve on all the grips that are the 
         in the set of grips to resolve.
 
+        Also, any grips that were moved to a different tap/producer record need to have the 
+        corresponding destination record updated since the drips will need to reflect the new
+        producer.
+
+        Basically the operations are:
+        1. transfer grip from one tap to another
+        2. add a new grip to be provided by a tap
+        3. remove a grip from being provided by a tap
+        4. add a new tap to the context for a given grip
+        5. remove a tap from the context
+
+        On transfer, we don't need to to anything to the destination side other than notify the 
+        drip of the new tap's value. 
+
+        A single grip will still be provided by one tap
+
         */
     }
 
