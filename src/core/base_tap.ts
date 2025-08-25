@@ -167,18 +167,19 @@ export abstract class BaseTap implements Tap {
   // will have a different set of updates, however, it's up to the tap implementation
   // to determine which updates to publish to which destination.
   protected publish(updates: Map<Grip<any>, any>, target?: GripContext): number {
-    if (!this.engine || !this.homeContext) {
+    if (!this.engine || !this.homeContext || !this.producer) {
       // If the tap isn't fully attached yet, treat as no-op publish.
       return 0;
     }
     
     var destinations: Destination[] = [];
     if (target) {
-      const destination = this.getDestination(target);
+      const destNode = target._getContextNode();
+      const destination = this.producer.getDestinations().get(destNode);
       if (!destination) throw new Error("Destination not found for this tap");
       destinations.push(destination);
     } else {
-      destinations = Array.from(this.producer?.getDestinations().values() ?? []);
+      destinations = Array.from(this.producer.getDestinations().values() ?? []);
     }
 
     var count = 0;
