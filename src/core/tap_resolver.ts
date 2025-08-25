@@ -103,43 +103,63 @@ export class SimpleResolver implements IGripResolver {
         const node = (context.kind === "GripContext") ? context.getNode() : context;
 
         /*
-        This is a little more complex than the addProducer method.
-        - Taps can be both added and removed.
-        - Some taps may already be attached to the context and may have different
-        output grips.
-        ** HOW DO WE HANDLE THIS? **
-        The EvaluationDelta contains a set of taps and the assiciated grips that it now should 
-        provide. There may be a number of existing grips that are already provided by this context
-        and will remain with the same producer.
-        - if the grip is transferred from one tap to another we need only update the destination record
-        and notify the destination of the new value from the new tap.
-        - If this context does not currently support the grip we need to add it to the set 
-        of grips to get children to resolve (we already to that now but the set of grips to
-        resolve will be determined by the newly allocated grips.)
-        - If the grip is removed from the context we need to remove it from the producer and handle 
-        cleanup of the destination (if needed).
+        This method applies changes to the producers (taps) within a specific context based on an `EvaluationDelta`.
 
-        - If the grip is added to the list of grips to resolve.
+        A key constraint is that any single grip can only be provided by *one* tap 
+        within a given context. The logic must first validate the delta to ensure it 
+        doesn't assign a single grip to multiple taps and raise an error if it does.
 
-        Once the taps are all in place we need to run a resolve on all the grips that are the 
-        in the set of grips to resolve.
+        The update is an atomic operation. All structural changes to the producer 
+        graph are made first, and only then are affected consumers re-resolved. 
+        This prevents consumers from resolving to an inconsistent, intermediate state.
 
-        Also, any grips that were moved to a different tap/producer record need to have the 
-        corresponding destination record updated since the drips will need to reflect the new
-        producer.
+        The process involves several steps:
 
-        Basically the operations are:
-        1. transfer grip from one tap to another
-        2. add a new grip to be provided by a tap
-        3. remove a grip from being provided by a tap
-        4. add a new tap to the context for a given grip
-        5. remove a tap from the context
+        1.  **Analyze and Validate Delta:**
+            -   Compare the `EvaluationDelta` with the current state of producers 
+                in the context node to determine three sets of changes: grips to 
+                add, grips to remove, and grips to transfer.
+            -   Validate that the resulting producer configuration does not assign 
+                any single grip to more than one tap. If it does, raise an error.
 
-        On transfer, we don't need to to anything to the destination side other than notify the 
-        drip of the new tap's value. 
+        2.  **Apply Structural Changes & Collect Affected Consumers:**
+            -   Iterate through the identified changes (removals, transfers, additions) 
+                and update the context node's producer mappings (`producers` and 
+                `producerByTap`).
+            -   During this process, for every grip that is removed or transferred, 
+                collect all of its current consumers. For every grip that is added, 
+                collect all potential consumers in the current context and its 
+                descendants. This creates a final, unique set of `(consumer_node, grip)` 
+                pairs that need re-resolution.
 
-        A single grip will still be provided by one tap
+        3.  **Trigger Batched Re-resolution:**
+            -   Iterate over the collected set of affected consumer-grip pairs and 
+                call `resolveConsumer()` for each one. This notifies them of the 
+                changes, allowing them to link to new producers or revert to 
+                default values.
 
+        4.  **Cleanup:**
+            -   Remove any taps that no longer provide any grips in this context.
+
+        **Core Operations (during Step 2):**
+
+        -   **For a Grip to Transfer:**
+            1.  Identify the outgoing producer (`tap_A`) and incoming producer (`tap_B`).
+            2.  Collect all current consumers of the grip from `tap_A`.
+            3.  Update the context node's producer maps: remove the grip from `tap_A`'s 
+                record and add it to `tap_B`'s.
+
+        -   **For a Grip to Add:**
+            1.  Identify the new tap providing the grip.
+            2.  Update the context node's producer maps to associate the grip with 
+                the new tap.
+            3.  Collect all consumers for this grip in the current context and its 
+                descendants, as they are all potentially affected.
+
+        -   **For a Grip to Remove:**
+            1.  Identify the tap that is no longer providing the grip.
+            2.  Collect all current consumers of the grip from that tap.
+            3.  Remove the producer mapping for the grip from the context node.
         */
     }
 
