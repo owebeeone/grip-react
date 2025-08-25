@@ -202,6 +202,7 @@ export class QueryEvaluator {
   private attributionUtility = new AttributionUtility();
   private inputGripRefCounts = new Map<Grip<any>, number>();
   private lastAttributedResult = new Map<Tap | TapFactory, TapAttribution>();
+  private structurallyChangedQueries = new Set<Query>();
 
   // Caching and evaluation strategy state
   private useHybridEvaluation: boolean;
@@ -242,6 +243,7 @@ export class QueryEvaluator {
 
     this.bindings.set(binding.id, binding);
     this.invertedIndex.add(binding.query);
+    this.structurallyChangedQueries.add(binding.query);
     this.cache.clear();
 
     for (const grip of binding.query.conditions.keys()) {
@@ -270,6 +272,8 @@ export class QueryEvaluator {
     if (binding) {
       this.bindings.delete(bindingId);
       this.invertedIndex.remove(binding.query);
+      this.activeMatches.delete(bindingId);
+      this.structurallyChangedQueries.add(binding.query);
       this.cache.clear();
 
       for (const grip of binding.query.conditions.keys()) {
@@ -436,6 +440,11 @@ export class QueryEvaluator {
   public onGripsChanged(changedGrips: Set<Grip<any>>, context: any): EvaluationDelta {
     const queriesToReevaluate = this.invertedIndex.getAffectedQueries(changedGrips);
     
+    for (const query of this.structurallyChangedQueries) {
+        queriesToReevaluate.add(query);
+    }
+    this.structurallyChangedQueries.clear();
+
     // Update active matches based on the re-evaluated queries
     const newMatches = this.evaluateQueries(queriesToReevaluate, context);
     for (const query of queriesToReevaluate) {

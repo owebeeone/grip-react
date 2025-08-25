@@ -435,6 +435,80 @@ describe('QueryEvaluator - Complex Partition Merging', () => {
     });
 });
 
+it('reflects removal in delta even with no grip changes', () => {
+    const out = new Grip<string>({ name: 'out' });
+    const color = new Grip<string>({ name: 'color' });
+    const tap = makeTap('tapA', [out]);
+    const q: Query = qb().oneOf(color, 'red', 10).build();
+
+    const ev = makeEvaluator(useHybridEvaluation, useCache);
+    ev.addBinding({ id: 'A', query: q, tap, baseScore: 5 });
+    
+    // Initial evaluation
+    const { added } = evalAndCheckStability(ev, new Set([color]), ctxWith([[color, 'red']]));
+    expect(findAttributionForGrip(added, out)?.bindingId).toBe('A');
+
+    // Remove the binding
+    const removeResult = ev.removeBinding('A');
+    expectGripsToEqual(removeResult.removedInputs, [color]);
+
+    // Re-evaluate with NO grip changes
+    const delta = evalAndCheckStability(ev, new Set(), ctxWith([[color, 'red']]));
+    expect(delta.added.size).toBe(0);
+    expect(delta.removed.size).toBe(1);
+    expect(findAttributionForGrip(delta.removed, out)?.bindingId).toBe('A');
+});
+
+it('reflects addition in delta even with no grip changes', () => {
+    const out = new Grip<string>({ name: 'out' });
+    const color = new Grip<string>({ name: 'color' });
+    const tap = makeTap('tapA', [out]);
+    const q: Query = qb().oneOf(color, 'red', 10).build();
+
+    const ev = makeEvaluator(useHybridEvaluation, useCache);
+
+    // Pre-warm the evaluator with an initial state and evaluation
+    evalAndCheckStability(ev, new Set([color]), ctxWith([[color, 'red']]));
+
+    // Add a binding that should match immediately
+    ev.addBinding({ id: 'A', query: q, tap, baseScore: 5 });
+
+    // Evaluate with NO grip changes
+    const delta = evalAndCheckStability(ev, new Set(), ctxWith([[color, 'red']]));
+    expect(delta.removed.size).toBe(0);
+    expect(delta.added.size).toBe(1);
+    expect(findAttributionForGrip(delta.added, out)?.bindingId).toBe('A');
+});
+
+it('removing a non-attributed (overridden) binding results in a no-op delta', () => {
+    const out = new Grip<string>({ name: 'out' });
+    const g = new Grip<string>({ name: 'g' });
+    const tapLow = makeTap('low', [out]);
+    const tapHigh = makeTap('high', [out]);
+    const q = qb().oneOf(g, 'x', 10).build();
+
+    const ev = makeEvaluator(useHybridEvaluation, useCache);
+    
+    // 1. Add low-scoring tap, confirm it wins
+    ev.addBinding({ id: 'LOW', query: q, tap: tapLow, baseScore: 0 });
+    const { added: added1 } = evalAndCheckStability(ev, new Set([g]), ctxWith([[g, 'x']]));
+    expect(findAttributionForGrip(added1, out)?.bindingId).toBe('LOW');
+
+    // 2. Add high-scoring tap, confirm it overrides the low one
+    ev.addBinding({ id: 'HIGH', query: q, tap: tapHigh, baseScore: 5 });
+    const delta2 = evalAndCheckStability(ev, new Set([g]), ctxWith([[g, 'x']]));
+    expect(findAttributionForGrip(delta2.added, out)?.bindingId).toBe('HIGH');
+    expect(findAttributionForGrip(delta2.removed, out)?.bindingId).toBe('LOW');
+
+    // 3. Remove the low-scoring (and now non-attributed) binding
+    ev.removeBinding('LOW');
+
+    // 4. Evaluate with no grip changes. Should be a no-op.
+    const delta3 = evalAndCheckStability(ev, new Set([]), ctxWith([[g, 'x']]));
+    expect(delta3.added.size).toBe(0);
+    expect(delta3.removed.size).toBe(0);
+});
+
 // Using .skip to prevent this from running on every file change during development.
 // Remove .skip to run the performance benchmark.
 describe.skip('QueryEvaluator - Performance', () => {
