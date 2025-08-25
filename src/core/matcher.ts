@@ -144,3 +144,33 @@ export class TapMatcher {
     this.container.getGrok().applyProducerDelta(this.container.getGripConsumerContext(), delta);
   }
 }
+
+/**
+ * A specialized context container that automatically creates and manages a TapMatcher.
+ * It provides `addBinding` and `removeBinding` methods that delegate to the internal matcher,
+ * simplifying the API for dynamic tap management.
+ */
+export class MatchingContext extends DualContextContainer {
+  private readonly matcher: TapMatcher;
+
+  constructor(home: GripContext, presentation: GripContext) {
+    super(home, presentation);
+    this.matcher = new TapMatcher(this);
+  }
+
+  /**
+   * Adds a query binding to the internal matcher and subscribes to necessary input grips.
+   * @param binding The QueryBinding to add.
+   */
+  public addBinding(binding: QueryBinding): void {
+    this.matcher.addBinding(binding);
+  }
+
+  /**
+   * Removes a query binding from the internal matcher and cleans up subscriptions.
+   * @param bindingId The ID of the binding to remove.
+   */
+  public removeBinding(bindingId: string): void {
+    this.matcher.removeBinding(bindingId);
+  }
+}
