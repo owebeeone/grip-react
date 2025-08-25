@@ -1,13 +1,14 @@
 import { Grip } from "./grip";
 import { GripContext } from "./context";
 import { Drip, Unsubscribe } from "./drip";
-import type { Tap } from "./tap";
+import type { Tap, TapFactory } from "./tap";
 import { Grok } from "./grok";
 import { GripContextNodeIf } from "./context_node";
 import { TaskHandleHolder } from "./task_queue";
 
 export class ProducerRecord {
   readonly tap: Tap;
+  readonly tapFactory: TapFactory | undefined;
   // Map of destination context id -> Destination (which holds the grips for that dest)
   private destinations = new Map<GripContextNode, Destination>();
 
@@ -25,8 +26,14 @@ export class ProducerRecord {
   // param drips.
   readonly outputs = new Set<Grip<any>>();
 
-  constructor(tap: Tap, outputs?: Iterable<Grip<any>>) {
-    this.tap = tap;
+  constructor(tap: Tap | TapFactory, outputs?: Iterable<Grip<any>>) {
+    if (tap.kind === 'TapFactory') {
+      this.tap = tap.build();
+      this.tapFactory = tap;
+    } else {
+      this.tap = tap;
+      this.tapFactory = undefined;
+    }
     if (outputs) for (const g of outputs) this.outputs.add(g as unknown as Grip<any>);
   }
 
@@ -292,7 +299,7 @@ export class GripContextNode implements GripContextNodeIf {
   // Destination-side resolved map: which provider context id supplies each Grip
   readonly resolvedProviders = new Map<Grip<any>, GripContextNode>();
   // Source-side: producer records per tap instance
-  readonly producerByTap = new Map<Tap, ProducerRecord>();
+  readonly producerByTap = new Map<Tap | TapFactory, ProducerRecord>();
   private lastSeen = Date.now();
 
   constructor(grok: Grok, ctx: GripContext) {

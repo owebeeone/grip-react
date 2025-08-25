@@ -22,13 +22,14 @@ function makeTap(label: string, provides: readonly Grip<any>[]): Tap {
 
 function makeFactory(label: string, provides: readonly Grip<any>[], counter: { n: number }): TapFactory {
     return {
+        kind: 'TapFactory',
         label,
         provides,
         build() {
             counter.n += 1;
             return makeTap(label + '#built', provides);
         },
-    };
+    } as unknown as TapFactory;
 }
 
 function makeEvaluator(
