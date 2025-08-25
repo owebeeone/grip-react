@@ -8,6 +8,8 @@ import type { GripContextNode, Destination, ProducerRecord } from "./graph";
 
 // Base implementation that manages lifecycle and home/destination bookkeeping
 export abstract class BaseTap implements Tap {
+  readonly kind: 'Tap' = 'Tap';
+
   protected engine?: Grok;
   readonly provides: readonly Grip<any>[];  // Grips this tap publishes.
   readonly destinationParamGrips?: readonly Grip<any>[];  // Grips this tap reads from the destination context.

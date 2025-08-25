@@ -11,7 +11,18 @@ export class ProducerRecord {
   // Map of destination context id -> Destination (which holds the grips for that dest)
   private destinations = new Map<GripContextNode, Destination>();
 
-  // Optional: outputs this tap can produce (for convenience)
+  // This is the actual allowed outputs for this tap. There may be more outputs
+  // than this set that the tap can produce, however those are hidden in this
+  // instance of the producer record.
+  // This can happen where a TapMatcher installs multiple taps that have a set
+  // of common output grips and has attributed the grips to the tap.
+  // This may still have more outputs than the is visible to the destination.
+  // One operation is that an output may be transferred from a different producer to
+  // this one. In that case, the other producer's destination will need to drop the grip
+  // and it will be transferred to this producer's destination for the same context
+  // which may mean this producer will need to create a new destination for the same
+  // context if it doesn't already exist which includes registering the destination 
+  // param drips.
   readonly outputs = new Set<Grip<any>>();
 
   constructor(tap: Tap, outputs?: Iterable<Grip<any>>) {
@@ -43,9 +54,8 @@ export class ProducerRecord {
     const destination = this.destinations.get(destCtx);
     if (destination) {
       destination.unsubscribeAllDestinationParams();
+      this.destinations.delete(destCtx);
     }
-
-    this.destinations.delete(destCtx);
 
     if (this.destinations.size === 0) {
       // Only detach if the tap's home context still exists and there are truly no destinations
@@ -107,7 +117,7 @@ export class ProducerRecord {
         }
         // We only update the destination for the grips the destination is subscribed to.
         for (const g of destination.getGrips()) {
-          if (values.has(g)) {
+          if (values.has(g) && this.outputs.has(g)) {
             updater(destCtx, g, values.get(g));
             count += 1;
           }

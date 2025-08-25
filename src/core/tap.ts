@@ -9,6 +9,8 @@ import type { GripContextLike } from "./containers";
 // produce() returns a Drip for the requested Grip.
 // (MVP: single-output path; multi-output & feeders can come next.)
 export interface Tap {
+  readonly kind: 'Tap';
+
   provides: readonly Grip<any>[];
   // Parameters read from the destination context lineage (affect a single destination)
   destinationParamGrips?: readonly Grip<any>[];
@@ -49,6 +51,7 @@ export interface Tap {
  * determine if the Tap will be selected.
  */
 export interface TapFactory {
+  readonly kind: 'TapFactory';
   label?: string;
   provides: readonly Grip<any>[];
   build(): Tap;
