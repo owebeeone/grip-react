@@ -130,7 +130,7 @@ export class Grok {
   }
 
   // Convenience registration at main context
-  registerTap(tap: Tap): void {
+  registerTap(tap: Tap | TapFactory): void {
     this.registerTapAt(this.mainContext, tap);
   }
 

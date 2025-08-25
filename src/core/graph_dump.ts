@@ -157,9 +157,9 @@ export class GripGraphDumper {
 			contexts.push(ctxNode);
 			// Collect taps attached at this context
 			for (const [tap, rec] of node.producerByTap) {
-				if (!seenTaps.has(tap)) {
-					taps.push(this.buildTapNode(node, tap, rec, seenDrips, drips));
-					seenTaps.add(tap);
+				if (!seenTaps.has(rec.tap)) {
+					taps.push(this.buildTapNode(node, rec.tap, rec, seenDrips, drips));
+					seenTaps.add(rec.tap);
 				}
 			}
 			// Collect consumer drips at this destination context
@@ -191,7 +191,7 @@ export class GripGraphDumper {
 		const ctx = node.get_context();
 		const gcStatus = this.computeGcStatus(ctx);
 		const children = node.get_children_nodes().map((c) => this.keys.getContextKey(c));
-		const taps = Array.from(node.producerByTap.keys()).map((t) => this.keys.getTapKey(t));
+		const taps = Array.from(node.producerByTap.values()).map((p) => this.keys.getTapKey(p.tap));
 		const isRoot = node.get_parent_nodes().length === 0;
 		const parents = node.get_context()?.getParents().map((p) => 
 			({ ctx: this.keys.getContextKey(p.ctx._getContextNode()), priority: p.priority }));
