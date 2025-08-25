@@ -1,6 +1,6 @@
 import { Grip } from "./grip";
 import { Drip } from "./drip";
-import type { Tap } from "./tap";
+import type { Tap, TapFactory } from "./tap";
 import { GripContextNode } from "./graph";
 import { Grok } from "./grok";
 
@@ -109,7 +109,7 @@ export class GripContext {
   }
 
 	// --- App-facing helpers to manage taps without referencing the engine ---
-	registerTap(tap: Tap): void {
+	registerTap(tap: Tap | TapFactory): void {
 		if (!this.grok) throw new Error("Context is not attached to an engine");
 		this.grok.registerTapAt(this, tap);
 	}
