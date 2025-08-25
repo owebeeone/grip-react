@@ -252,7 +252,7 @@ export function createMultiAtomValueTap<Outs extends GripRecord>(config: {
   grips?: ReadonlyArray<Values<Outs>>;
   gripMap?: Map<Values<Outs>, GripValue<Values<Outs>> | undefined>;
   handleGrip?: Grip<MultiAtomTapHandle<Outs>>;
-}): MultiAtomTap<Outs> {
+}): MultiAtomValueTap<Outs> {
   const resolvedGrips: ReadonlyArray<Values<Outs>> = config.grips ?? Array.from(config.gripMap?.keys() ?? []);
   const tap = new MultiAtomValueTap<Outs>(resolvedGrips, config.gripMap, { handleGrip: config.handleGrip });
   return tap;
