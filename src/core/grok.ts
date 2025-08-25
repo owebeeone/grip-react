@@ -1,12 +1,13 @@
 import { Grip } from "./grip";
 import { GripContext } from "./context";
 import { Drip } from "./drip";
-import { Tap } from "./tap";
+import { Tap, TapFactory } from "./tap";
 import { GrokGraph, GripContextNode, ProducerRecord } from "./graph";
 import { DualContextContainer } from "./containers";
 import type { GripContextLike } from "./containers";
 import { TaskHandleHolder, TaskQueue } from "./task_queue";
 import { SimpleResolver, IGripResolver } from "./tap_resolver";
+import { EvaluationDelta } from "./query_evaluator";
 
 function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
   const result = new Set<T>();
@@ -114,10 +115,14 @@ export class Grok {
   }
 
 
-  registerTapAt(ctx: GripContext | GripContextLike, tap: Tap): void {
+  registerTapAt(ctx: GripContext | GripContextLike, tap: Tap | TapFactory): void {
     const homeCtx = (ctx && (ctx as any).getGripHomeContext) ? (ctx as GripContextLike).getGripHomeContext() : (ctx as GripContext);
     // Delegate to resolver for attach and re-resolution
     this.resolver.addProducer(homeCtx, tap);
+  }
+
+  applyProducerDelta(context: GripContext | GripContextNode, delta: EvaluationDelta): void {
+    this.resolver.applyProducerDelta(context, delta);
   }
 
   // Convenience registration at main context

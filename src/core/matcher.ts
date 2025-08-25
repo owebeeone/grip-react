@@ -140,9 +140,7 @@ export class TapMatcher {
    * @param delta The evaluation delta containing added and removed tap attributions.
    */
   public applyAttributionDelta(delta: EvaluationDelta): void {
-    // TODO: Implement the logic to add/remove taps from the presentation context
-    // based on the contents of delta.added and delta.removed.
-    // This will involve updating the GripContextNode's producer records.
-    console.log("Applying attribution delta:", delta);
+    // Delta is applied to the consumer/presentation context.
+    this.container.getGrok().applyProducerDelta(this.container.getGripConsumerContext(), delta);
   }
 }

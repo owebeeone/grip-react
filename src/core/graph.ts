@@ -284,6 +284,7 @@ export class Destination {
 }
 
 export class GripContextNode implements GripContextNodeIf {
+  readonly kind: "GripContextNode" = "GripContextNode";
   readonly grok: Grok;
   readonly id: string;
   readonly contextRef: WeakRef<GripContext>;
@@ -328,6 +329,16 @@ export class GripContextNode implements GripContextNodeIf {
     return this.parents.map(p => p.node);
   }
 
+  isRoot(): boolean {
+    // Root is the context that has no parents.
+    return this.parents.length === 0;
+  }
+
+  // Expose a shallow copy of parents (for graph building / debug)
+  getParents(): ReadonlyArray<GripContextNode> {
+    return this.get_parents_with_priority().map(p => p.node);
+  }
+
   get_parents_with_priority(): ReadonlyArray<{ node: GripContextNode; priority: number }> {
     return this.parents.slice();
   }
@@ -367,6 +378,18 @@ export class GripContextNode implements GripContextNodeIf {
     }
   }
 
+  // Internal method to remove a tap from a node.
+  _removeTap(tap: Tap | TapFactory): void {
+    const producerRecord = this.producerByTap.get(tap);
+    if (producerRecord) {
+      for (const grip of producerRecord.outputs) {
+        this.producers.delete(grip);
+      }
+      this.producerByTap.delete(tap);
+      producerRecord.tap.onDetach?.();
+    }
+  }
+
   recordProducer<T>(grip: Grip<T>, rec: ProducerRecord): void {
     this.producers.set(grip as unknown as Grip<any>, rec);
     this.lastSeen = Date.now();
@@ -389,7 +412,7 @@ export class GripContextNode implements GripContextNodeIf {
     return rec;
   }
 
-  getProducerRecord(tap: Tap): ProducerRecord | undefined {
+  getProducerRecord(tap: Tap | TapFactory): ProducerRecord | undefined {
     return this.producerByTap.get(tap);
   }
 

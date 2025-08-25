@@ -9,6 +9,7 @@ import { Grok } from "./grok";
 type Override = { type: "value"; value: unknown } | { type: "drip"; drip: Drip<any> };
 
 export class GripContext {
+  readonly kind: "GripContext" = "GripContext";
   private grok: Grok;
   private contextNode: GripContextNode;
   readonly id: string;

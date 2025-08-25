@@ -1,8 +1,9 @@
 import { Grip } from "./grip";
 import { GripContext } from "./context";
-import { Tap } from "./tap";
+import { Tap, TapFactory } from "./tap";
 import { Grok } from "./grok";
 import { GripContextNode } from "./graph";
+import { EvaluationDelta } from "./query_evaluator";
 
 function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
   const result = new Set<T>();
@@ -45,13 +46,13 @@ export interface IGripResolver {
      * Called when a new producer (tap) is added to a context.
      * It finds and re-links any descendant consumers that might be affected.
      */
-    addProducer(context: GripContext, tap: Tap): void;
+    addProducer(context: GripContext, tap: Tap | TapFactory): void;
 
     /**
      * Called when a producer (tap) is removed from a context.
      * It finds and re-links any consumers that were linked to it.
      */
-    removeProducer(context: GripContext, tap: Tap): void;
+    removeProducer(context: GripContext, tap: Tap | TapFactory): void;
 
     /**
      * Called when a parent is added to a context.
@@ -64,6 +65,12 @@ export interface IGripResolver {
      * It re-evaluates all consumers in the context and its descendants.
      */
     unlinkParent(context: GripContext, parent: GripContext): void;
+
+    /**
+     * Called when a producer delta is applied to a context.
+     * It updates the graph to reflect the new producer state.
+     */
+    applyProducerDelta(context: GripContext | GripContextNode, delta: EvaluationDelta): void;
 }
 
 /**
@@ -89,6 +96,35 @@ export class SimpleResolver implements IGripResolver {
         this.unresolveConsumer(node, grip);
         // Remove the consumer from the node's registry
         node.removeConsumerForGrip(grip);
+    }
+
+    applyProducerDelta(context: GripContext | GripContextNode, delta: EvaluationDelta): void {
+        // TODO: Implement this...
+        const node = (context.kind === "GripContext") ? context.getNode() : context;
+
+        /*
+        This is a little more complex than the addProducer method.
+        - Taps can be both added and removed.
+        - Some taps may already be attached to the context and may have different
+        output grips.
+        ** HOW DO WE HANDLE THIS? **
+        The EvaluationDelta contains a set of taps and the assiciated grips that it now should 
+        provide. There may be a number of existing grips that are already provided by this context
+        and will remain with the same producer.
+        - if the grip is transferred from one tap to another we need only update the destination record
+        and notify the destination of the new value from the new tap.
+        - If this context does not currently support the grip we need to add it to the set 
+        of grips to get children to resolve (we already to that now but the set of grips to
+        resolve will be determined by the newly allocated grips.)
+        - If the grip is removed from the context we need to remove it from the producer and handle 
+        cleanup of the destination (if needed).
+
+        - If the grip is added to the list of grips to resolve.
+
+        Once the taps are all in place we need to run a resolve on all the grips that are the 
+        in the set of grips to resolve.
+
+        */
     }
 
     addProducer(context: GripContext, tap: Tap): void {
@@ -125,7 +161,7 @@ export class SimpleResolver implements IGripResolver {
         }
     }
 
-    removeProducer(context: GripContext, tap: Tap): void {
+    removeProducer(context: GripContext, tap: Tap | TapFactory): void {
         const producerNode = this.grok.ensureNode(context);
         const producerRecord = producerNode.getProducerRecord(tap);
         if (!producerRecord) return;
@@ -146,9 +182,11 @@ export class SimpleResolver implements IGripResolver {
                 producerNode.get_producers().delete(grip);
             }
         }
-        // Remove the producer record from the node and notify tap
-        producerNode.producerByTap.delete(tap);
-        tap.onDetach?.();
+
+        // Remove the producer record from the node and notify tap.
+        // The tap can be a tap factory, so we need to let the node handle it
+        // as it will have the real tap instance.
+        producerNode._removeTap(tap);
 
         // Now unresolve and re-resolve each affected destination/grip
         for (const { destNode, grip } of pairs) {
@@ -245,6 +283,7 @@ export class SimpleResolver implements IGripResolver {
         }
     }
 
+
     /**
      * Finds the highest-priority producer for a given grip starting from a context node.
      * Implements the breadth-first, root-last search algorithm.
@@ -272,15 +311,13 @@ export class SimpleResolver implements IGripResolver {
 
             // Enqueue parents for the next level, maintaining root-last order
             // and explicit priority ordering from the context layer.
-            const sourceCtx = currentNode.get_context();
-            const orderedParents = sourceCtx ? sourceCtx.getParents() : [];
+            const orderedParents = currentNode.get_parents_with_priority();
             const nonRoots: GripContextNode[] = [];
             const roots: GripContextNode[] = [];
 
-            for (const { ctx: parentCtx } of orderedParents) {
-                const parentNode = this.grok.ensureNode(parentCtx);
+            for (const { node: parentNode } of orderedParents) {
                 if (!visited.has(parentNode)) {
-                    if (parentCtx.isRoot()) {
+                    if (parentNode.isRoot()) {
                         roots.push(parentNode);
                     } else {
                         nonRoots.push(parentNode);
