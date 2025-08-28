@@ -87,7 +87,10 @@ export abstract class BaseAsyncTap extends BaseTap {
   }
 
   onConnect(dest: GripContext, grip: Grip<any>): void {
-    super.onConnect(dest, grip);
+    // Override base to trigger produce ONLY if this is the first connected destination
+    if ((this.producer?.getDestinations().size ?? 0) === 1) {
+      super.onConnect(dest, grip);
+    }
     this.kickoff(dest);
   }
 

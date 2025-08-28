@@ -2,7 +2,7 @@ import { Grip } from "./grip";
 import { GripContext } from "./context";
 import { Drip } from "./drip";
 import type { Grok } from "./grok";
-import type { GripContextLike } from "./containers";
+import type { GripContextLike } from "./context";
 
 // A Tap advertises it can provide one or more Grips.
 // match(ctx) returns a score; <= -Infinity means "no".

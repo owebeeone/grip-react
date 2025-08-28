@@ -8,7 +8,15 @@ import { Grok } from "./grok";
 // It can hold overrides as either values OR Drips (dynamic params).
 type Override = { type: "value"; value: unknown } | { type: "drip"; drip: Drip<any> };
 
-export class GripContext {
+// Common interface for context containers that can be used with useGrip and tap attachment
+export interface GripContextLike {
+  getGripConsumerContext(): GripContext; // where useGrip should read from
+  getGripHomeContext(): GripContext;     // where taps should be attached by default
+  getGrok(): Grok;
+}
+
+
+export class GripContext implements GripContextLike {
   readonly kind: "GripContext" = "GripContext";
   private grok: Grok;
   private contextNode: GripContextNode;
@@ -19,6 +27,13 @@ export class GripContext {
     this.id = id ?? `ctx_${Math.random().toString(36).slice(2)}`;
     //console.log(`GripContext: Created new context with ID: ${this.id}`);
     this.contextNode = engine.ensureNode(this);
+  }
+
+  getGripConsumerContext(): GripContext {
+    return this;
+  }
+  getGripHomeContext(): GripContext {
+    return this;
   }
 
   getNode(): GripContextNode {
@@ -54,7 +69,8 @@ export class GripContext {
     })).filter(p => p.ctx != null);
   }
 
-  addParent(parent: GripContext, priority = 0): this {
+  addParent(parentCtxt: GripContextLike, priority = 0): this {
+    const parent = parentCtxt.getGripHomeContext();
     if (parent.contextNode.grok !== this.grok) throw new Error("Contexts must be attached to the same engine");
     if (parent === this) throw new Error("Context cannot be its own parent");
 

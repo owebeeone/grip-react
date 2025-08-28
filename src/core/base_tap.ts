@@ -1,7 +1,6 @@
 import { Drip, Unsubscribe } from "./drip";
 import { Grip } from "./grip";
-import type { GripContext } from "./context";
-import type { GripContextLike } from "./containers";
+import type { GripContext, GripContextLike } from "./context";
 import type { Grok } from "./grok";
 import type { Tap } from "./tap";
 import type { GripContextNode, Destination, ProducerRecord } from "./graph";
@@ -176,10 +175,15 @@ export abstract class BaseTap implements Tap {
     if (target) {
       const destNode = target._getContextNode();
       const destination = this.producer.getDestinations().get(destNode);
-      if (!destination) throw new Error("Destination not found for this tap");
+      if (!destination) {
+        // Destination might have been removed before the async produce call.
+        // This is not an error; just means there's nothing to publish to.
+        console.log(`[BaseTap] publish: Destination not found for this tap: ${target.id}`);
+        return 0;
+      }
       destinations.push(destination);
     } else {
-      destinations = Array.from(this.producer.getDestinations().values() ?? []);
+      destinations = Array.from(this.producer.getDestinations().values());
     }
 
     var count = 0;

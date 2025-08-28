@@ -25,3 +25,4 @@ export { createDebouncer } from "./core/debounce";
 export { BaseAsyncTap, createAsyncValueTap, createAsyncMultiTap } from "./core/async_tap";
 export * from "./react/provider";
 export * from "./react/hooks";
+export { withOneOf, withAnyOf, Query, QueryBuilderFactory } from "./core/query";

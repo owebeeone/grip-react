@@ -16,6 +16,7 @@ import {
   EvaluationDelta,
   AddBindingResult,
   RemoveBindingResult,
+  evaluationToString,
 } from "./query_evaluator";
 
 /**
@@ -46,9 +47,18 @@ export class TapMatcher {
    * @param binding The QueryBinding to add.
    */
   public addBinding(binding: QueryBinding): void {
+    console.log(`[TapMatcher] addBinding: ${binding.id}`);
     const result: AddBindingResult = this.evaluator.addBinding(binding);
     result.newInputs.forEach(grip => this._subscribeToGrip(grip));
     result.removedInputs.forEach(grip => this._unsubscribeFromGrip(grip));
+    
+    // Force re-evaluation of all grips related to the new binding
+    for (const grip of binding.query.conditions.keys()) {
+      this.changedGrips.add(grip);
+    }
+
+    // Schedule an immediate evaluation to establish the initial state
+    this.container.getGripHomeContext().submitTask(() => this._evaluate(), 100);
   }
 
   /**
@@ -56,8 +66,19 @@ export class TapMatcher {
    * @param bindingId The ID of the binding to remove.
    */
   public removeBinding(bindingId: string): void {
+    console.log(`[TapMatcher] removeBinding: ${bindingId}`);
+    const binding = this.evaluator.getBinding(bindingId); // Assuming getBinding exists
+    if (binding) {
+      for (const grip of binding.query.conditions.keys()) {
+        this.changedGrips.add(grip);
+      }
+    }
+
     const result: RemoveBindingResult = this.evaluator.removeBinding(bindingId);
     result.removedInputs.forEach(grip => this._unsubscribeFromGrip(grip));
+
+    // Schedule an immediate evaluation to update the state after removal
+    this.container.getGripHomeContext().submitTask(() => this._evaluate(), 100);
   }
 
   /**
@@ -114,6 +135,7 @@ export class TapMatcher {
    * Executes the query evaluator with the collected changes.
    */
   private _evaluate(): void {
+    console.log(`[TapMatcher] _evaluate: Evaluating ${this.changedGrips.size} grips.`);
     if (this.changedGrips.size === 0 && !this.isFirstEvaluation) {
       return;
     }
@@ -141,6 +163,7 @@ export class TapMatcher {
    */
   public applyAttributionDelta(delta: EvaluationDelta): void {
     // Delta is applied to the consumer/presentation context.
+    console.log(`[TapMatcher] applyAttributionDelta: Applying delta to consumer context. ${evaluationToString(delta)}`);
     this.container.getGrok().applyProducerDelta(this.container.getGripConsumerContext(), delta);
   }
 }

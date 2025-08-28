@@ -78,6 +78,39 @@ export interface EvaluationDelta {
     removed: Map<Tap | TapFactory, TapAttribution>; // The old value that was removed
 }
 
+export function evaluationToString(delta: EvaluationDelta): string {
+  const formatAttribution = (attribution: TapAttribution): string => {
+    const tapId = (attribution.producerTap as any).id 
+      ?? (attribution.producerTap as any).label 
+      ?? attribution.bindingId 
+      ?? 'UnknownTap';
+    const grips = Array.from(attribution.attributedGrips).map(g => g.key).join(', ');
+    return `  Tap '${tapId}': [${grips}]`;
+  };
+
+  let result = 'EvaluationDelta:\n';
+
+  if (delta.added.size > 0) {
+    result += ` Added (${delta.added.size}):\n`;
+    delta.added.forEach(attr => {
+      result += `${formatAttribution(attr)}\n`;
+    });
+  }
+
+  if (delta.removed.size > 0) {
+    result += ` Removed (${delta.removed.size}):\n`;
+    delta.removed.forEach(attr => {
+      result += `${formatAttribution(attr)}\n`;
+    });
+  }
+
+  if (delta.added.size === 0 && delta.removed.size === 0) {
+    result += ' No changes.';
+  }
+
+  return result;
+}
+
 
 // ---[ Utility Components ]------------------------------------------------------
 
@@ -225,6 +258,14 @@ export class QueryEvaluator {
     this.useHybridEvaluation = useHybridEvaluation;
     this.useCache = useCache;
     initialBindings.forEach(b => this.addBinding(b));
+  }
+
+  /**
+   * Retrieves a binding by its ID.
+   * @param bindingId The ID of the binding to retrieve.
+   */
+  public getBinding(bindingId: string): QueryBinding | undefined {
+    return this.bindings.get(bindingId);
   }
 
   /**

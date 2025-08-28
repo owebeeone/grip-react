@@ -1,8 +1,7 @@
 import { useSyncExternalStore, useMemo, useEffect, useCallback } from "react";
 import type React from "react";
 import { Grip } from "../core/grip";
-import { GripContext } from "../core/context";
-import type { GripContextLike } from "../core/containers";
+import { GripContext, GripContextLike } from "../core/context";
 import { useRuntime } from "./provider";
 import { Tap } from "../core/tap";
 import { createAtomValueTap, AtomTap, AtomTapHandle } from "../core/atom_tap";
@@ -73,8 +72,8 @@ export function useTap(
   const tap = useMemo(factory, opts?.deps ?? [ctx]); // default: recreate only when ctx changes
 
   useEffect(() => {
-    ctx.registerTap(tap);
-    return () => { ctx.unregisterTap(tap); };
+    ctx.getGripHomeContext().registerTap(tap);
+    return () => { ctx.getGripHomeContext().unregisterTap(tap); };
   }, [ctx, tap]);
 }
 

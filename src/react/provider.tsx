@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useMemo } from "react";
 import { Grok } from "../core/grok";
-import { GripContext as GCtx, GripContext } from "../core/context";
+import { GripContextLike as GCtx, GripContextLike } from "../core/context";
 import { Grip } from "../core/grip";
 
 type Runtime = { grok: Grok; context: GCtx };
@@ -22,18 +22,18 @@ export function useRuntime(): Runtime {
 // Create a child context off either an explicit parent or the provider's context
 export function useChildContext(parent?: GCtx): GCtx {
   const { context: parentCtx } = useRuntime();
-  return useMemo(() => (parent ?? parentCtx).createChild(), [parent, parentCtx]);
+  return useMemo(() => (parent ?? parentCtx).getGripConsumerContext().createChild(), [parent, parentCtx]);
 }
 
 /** 
  * Create a child context off either an explicit parent or the provider's context
  * and memoize it. Never changes.
  */
-export function useLocalContext(parent?: GripContext): GripContext {
+export function useLocalContext(parent?: GripContextLike): GripContextLike {
   const { context: providerCtx } = useRuntime();
-  const ref = React.useRef<GripContext | null>(null);
+  const ref = React.useRef<GripContextLike | null>(null);
   if (ref.current === null) {
-    ref.current = (parent ?? providerCtx).createChild();
+    ref.current = (parent ?? providerCtx).getGripConsumerContext().createChild();
   }
   return ref.current;
 }

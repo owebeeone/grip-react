@@ -1,13 +1,13 @@
 import { Grip } from "./grip";
-import { GripContext } from "./context";
+import { GripContext, GripContextLike } from "./context";
 import { Drip } from "./drip";
 import { Tap, TapFactory } from "./tap";
 import { GrokGraph, GripContextNode, ProducerRecord } from "./graph";
 import { DualContextContainer } from "./containers";
-import type { GripContextLike } from "./containers";
 import { TaskHandleHolder, TaskQueue } from "./task_queue";
 import { SimpleResolver, IGripResolver } from "./tap_resolver";
-import { EvaluationDelta } from "./query_evaluator";
+import { EvaluationDelta, QueryBinding } from "./query_evaluator";
+import { MatchingContext } from "./matcher";
 
 function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
   const result = new Set<T>();
@@ -43,14 +43,16 @@ export class Grok {
   private taskQueue = new TaskQueue();
 
   readonly rootContext: GripContext;
-  readonly mainContext: GripContext;
+  readonly mainHomeContext: GripContext;
+  readonly mainPresentationContext: GripContext;
+  readonly mainContext: MatchingContext;
   readonly resolver: IGripResolver = new SimpleResolver(this);
 
   constructor() {
     this.rootContext = new GripContext(this, "root");
-    this.mainContext = new GripContext(this, "main").addParent(this.rootContext, 0);
-    this.graph.ensureNode(this.rootContext);
-    this.graph.ensureNode(this.mainContext);
+    this.mainHomeContext = new GripContext(this, "main-home").addParent(this.rootContext, 0);
+    this.mainPresentationContext = new GripContext(this, "main-presentation").addParent(this.mainHomeContext, 0);
+    this.mainContext = new MatchingContext(this.mainHomeContext, this.mainPresentationContext);
   }
 
   // Resets the Grok instance to its initial state for testing purposes.
@@ -62,9 +64,6 @@ export class Grok {
     (this as any).rootContext = new GripContext(this, "root");
     (this as any).mainContext = new GripContext(this, "main").addParent(this.rootContext, 0);
 
-    // Ensure nodes for the re-initialized contexts are in the graph
-    this.graph.ensureNode(this.rootContext);
-    this.graph.ensureNode(this.mainContext);
   }
 
   hasCycle(newNode: GripContextNode): boolean {
@@ -119,8 +118,8 @@ export class Grok {
   }
 
 
-  registerTapAt(ctx: GripContext | GripContextLike, tap: Tap | TapFactory): void {
-    const homeCtx = (ctx && (ctx as any).getGripHomeContext) ? (ctx as GripContextLike).getGripHomeContext() : (ctx as GripContext);
+  registerTapAt(ctx: GripContextLike, tap: Tap | TapFactory): void {
+    const homeCtx = ctx.getGripHomeContext();
     // Delegate to resolver for attach and re-resolution
     this.resolver.addProducer(homeCtx, tap);
   }
@@ -158,9 +157,10 @@ export class Grok {
   // publishFrom removed: callers must know the home (producer) context
 
   // Central query API: component asks for a Grip from a Context => gets a Drip<T>
-  query<T>(grip: Grip<T>, ctx: GripContext): Drip<T> {
-    // Ensure nodes for ctx and all parents encountered
-    const ctxNode = this.ensureNode(ctx);
+  query<T>(grip: Grip<T>, consumerCtx: GripContextLike): Drip<T> {
+
+    const ctx = consumerCtx.getGripConsumerContext();
+    const ctxNode = ctx.getGripConsumerContext()._getContextNode();
 
     var drip = ctxNode.getLiveDripForGrip(grip);
 
@@ -178,6 +178,14 @@ export class Grok {
     this.resolver.addConsumer(ctx, grip);
 
     return drip;
+  }
+
+  addBinding(binding: QueryBinding): void {
+    this.mainContext.addBinding(binding);
+  }
+
+  removeBinding(bindingId: string): void {
+    this.mainContext.removeBinding(bindingId);
   }
 
   // resolveConsumer(dest: GripContext, source: GripContext, grip: Grip<any>): void {

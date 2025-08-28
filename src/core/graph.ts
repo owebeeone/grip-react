@@ -38,6 +38,7 @@ export class ProducerRecord {
   }
 
   addDestinationGrip(destNode: GripContextNode, grip: Grip<any>): void {
+    console.log(`[ProducerRecord] addDestinationGrip: Adding ${grip.key} to ${destNode.id}`);
     var existing = this.destinations.get(destNode);
     var added = false;
     if (!existing) {
@@ -52,8 +53,10 @@ export class ProducerRecord {
     if (added) {
       this.tap.onConnect?.(destCtx as GripContext, grip);
     } else {
-      // Ensure newly added grips (e.g., handle grip) receive initial values
-      if (destCtx) this.tap.produce({ destContext: destCtx });
+      // Always produce initial values when a grip is added to a destination.
+      if (destCtx) {
+        this.tap.produce({ destContext: destCtx });  // TODO This should be delayed/placed in a task queue.
+      }
     }
   }
 
@@ -79,6 +82,7 @@ export class ProducerRecord {
 
   // Add a destination for a grip.
   addDestination(destNode: GripContextNode, grip: Grip<any>): void {
+    console.log(`[ProducerRecord] addDestination: Adding ${grip.key} to ${destNode.id}`);
     var existing = this.destinations.get(destNode);
     if (!existing) {
       existing = new Destination(destNode, this.tap, this);
@@ -91,6 +95,7 @@ export class ProducerRecord {
 
   // Remove the context/grip pair from this producer.
   removeDestinationGripForContext(destNode: GripContextNode, grip: Grip<any>): void {
+    console.log(`[ProducerRecord] removeDestinationGripForContext: Removing ${grip.key} from ${destNode.id}`);
     const destination = this.destinations.get(destNode);
     if (destination) {
       destination.removeGrip(grip);

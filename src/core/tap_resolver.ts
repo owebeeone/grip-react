@@ -100,112 +100,73 @@ export class SimpleResolver implements IGripResolver {
 
     applyProducerDelta(context: GripContext | GripContextNode, delta: EvaluationDelta): void {
         const node = (context.kind === "GripContext") ? context.getNode() : context;
+        console.log(`[SimpleResolver] applyProducerDelta: Queuing delta application for ${node.id}`);
 
-        // --- Step 1: Analyze and Validate Delta ---
-        const { added, removed, transferred, finalProducers } = this.analyzeDelta(node, delta);
-
-        // Validate that no grip is provided by more than one tap in the final configuration
-        const gripToTapMap = new Map<Grip<any>, Tap | TapFactory>();
-        for (const [tap, attribution] of finalProducers.entries()) {
-            for (const grip of attribution.attributedGrips) {
-                if (gripToTapMap.has(grip)) {
-                    const existingTap = gripToTapMap.get(grip)!;
-                    throw new Error(
-                        `Invalid Delta: Grip '${grip.key}' is assigned to multiple taps ('${(existingTap as any).id}' and '${(tap as any).id}') in the same context.`
-                    );
-                }
-                gripToTapMap.set(grip, tap);
-            }
-        }
-
-        // --- Step 2: Collect all affected consumers before making any changes ---
-        const consumersToReResolve = new Set<{ destNode: GripContextNode; grip: Grip<any> }>();
-
-        // Collect from transfers
-        for (const [grip, { from }] of transferred.entries()) {
-            const oldProducerRecord = node.getProducerRecord(from);
-            if (oldProducerRecord) {
-                this.collectConsumers(oldProducerRecord, grip, consumersToReResolve);
-            }
-        }
-        
-        // Collect from removals
-        for (const [tap, grips] of removed.entries()) {
-            const producerRecord = node.getProducerRecord(tap);
-            if (producerRecord) {
-                for (const grip of grips) {
-                    this.collectConsumers(producerRecord, grip, consumersToReResolve);
+        node.submitTask(() => {
+            console.log(`[SimpleResolver] applyProducerDelta: Executing queued delta application for ${node.id}`);
+            // --- Step 1: Collect all affected consumers before making any changes ---
+            const consumersToReResolve = new Set<{ destNode: GripContextNode; grip: Grip<any> }>();
+            for (const [tap, attribution] of delta.removed.entries()) {
+                const producerRecord = node.getProducerRecord(tap);
+                if (producerRecord) {
+                    for (const grip of attribution.attributedGrips) {
+                        this.collectConsumers(producerRecord, grip, consumersToReResolve);
+                    }
                 }
             }
-        }
-        
-        // Collect consumers for newly added grips from all descendants
-        if (added.size > 0) {
-            const newlyAddedGrips = new Set<Grip<any>>();
-            added.forEach(grips => grips.forEach(g => newlyAddedGrips.add(g)));
+
+            // --- Step 2: Apply all structural changes to the graph ---
+
+            // Process removals
+            for (const [tap, attribution] of delta.removed.entries()) {
+                const producerRecord = node.getProducerRecord(tap);
+                if (producerRecord) {
+                    for (const grip of attribution.attributedGrips) {
+                        // Only remove the producer for this grip if it's the one currently assigned
+                        if (node.get_producers().get(grip) === producerRecord) {
+                            node.get_producers().delete(grip);
+                        }
+                        producerRecord.outputs.delete(grip);
+                    }
+                }
+            }
             
+            // Process additions
+            for (const [tap, attribution] of delta.added.entries()) {
+                const producerRecord = node.getOrCreateProducerRecord(tap as Tap, (tap as Tap).provides);
+                for (const grip of attribution.attributedGrips) {
+                    // This will overwrite any existing producer for the grip, which is intended.
+                    node.recordProducer(grip, producerRecord);
+                    producerRecord.outputs.add(grip);
+                }
+            }
+            
+            // --- Step 3: Trigger Batched Re-resolution for removals and any new consumers ---
             const descendants = [node, ...this.getDescendants(node)];
-            for (const descendant of descendants) {
-                for (const [grip] of descendant.get_consumers()) {
-                    if (newlyAddedGrips.has(grip)) {
-                        consumersToReResolve.add({ destNode: descendant, grip });
+            for (const [tap, attribution] of delta.added.entries()) {
+                for (const grip of attribution.attributedGrips) {
+                    for (const descendant of descendants) {
+                        if (descendant.get_consumers().has(grip)) {
+                            consumersToReResolve.add({ destNode: descendant, grip });
+                        }
                     }
                 }
             }
-        }
 
-        // --- Step 3: Apply all structural changes to the graph ---
+            for (const { destNode, grip } of consumersToReResolve) {
+                this.unresolveConsumer(destNode, grip);
+                this.resolveConsumer(destNode, grip);
+            }
 
-        // Process transfers
-        for (const [grip, { from, to }] of transferred.entries()) {
-            const oldProducerRecord = node.getProducerRecord(from);
-            const newProducerRecord = node.getOrCreateProducerRecord(to as Tap, (to as Tap).provides);
-            
-            oldProducerRecord?.outputs.delete(grip);
-            newProducerRecord.outputs.add(grip);
-            node.recordProducer(grip, newProducerRecord); // This overwrites the old producer for this grip
-        }
-
-        // Process removals
-        for (const [tap, grips] of removed.entries()) {
-            const producerRecord = node.getProducerRecord(tap);
-            if (producerRecord) {
-                for (const grip of grips) {
-                    if (node.get_producers().get(grip) === producerRecord) {
-                        node.get_producers().delete(grip);
-                    }
-                    producerRecord.outputs.delete(grip);
+            // --- Step 4: Cleanup ---
+            const tapsInDelta = new Set([...delta.added.keys(), ...delta.removed.keys()]);
+            for (const tap of tapsInDelta) {
+                const producerRecord = node.getProducerRecord(tap);
+                if (producerRecord && producerRecord.outputs.size === 0) {
+                    node._removeTap(tap);
                 }
             }
-        }
-        
-        // Process additions
-        for (const [tap, grips] of added.entries()) {
-            const producerRecord = node.getOrCreateProducerRecord(tap as Tap, (tap as Tap).provides);
-            for (const grip of grips) {
-                producerRecord.outputs.add(grip);
-                node.recordProducer(grip, producerRecord);
-            }
-        }
-        
-        // --- Step 4: Trigger Batched Re-resolution ---
-        for (const { destNode, grip } of consumersToReResolve) {
-            // By explicitly unresolving first, we force the resolver to find the
-            // new best producer, even if the producer node hasn't changed (e.g., a transfer).
-            this.unresolveConsumer(destNode, grip);
-            this.resolveConsumer(destNode, grip);
-        }
-
-        // --- Step 5: Cleanup ---
-        // Remove taps that no longer provide any grips
-        const tapsInDelta = new Set([...delta.added.keys(), ...delta.removed.keys()]);
-        for (const tap of tapsInDelta) {
-            const producerRecord = node.getProducerRecord(tap);
-            // If the producer record still exists but provides no outputs, remove it.
-            if (producerRecord && producerRecord.outputs.size === 0) {
-                node._removeTap(tap);
-            }
-        }
+        }, 100); // Schedule as a low-priority task
     }
 
     private analyzeDelta(node: GripContextNode, delta: EvaluationDelta) {
