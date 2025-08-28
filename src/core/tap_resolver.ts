@@ -132,8 +132,20 @@ export class SimpleResolver implements IGripResolver {
             }
             
             // Process additions
-            for (const [tap, attribution] of delta.added.entries()) {
-                const producerRecord = node.getOrCreateProducerRecord(tap as Tap, (tap as Tap).provides);
+            for (const [tapOrFactory, attribution] of delta.added.entries()) {
+                // If it's a TapFactory, build the tap instance
+                const tapInstance = tapOrFactory.kind === 'TapFactory' 
+                    ? (tapOrFactory as TapFactory).build() 
+                    : tapOrFactory as Tap;
+                
+                const producerRecord = node.getOrCreateProducerRecord(tapInstance, tapInstance.provides);
+                
+                // Ensure the tap is properly attached if it isn't already
+                const nodeContext = node.get_context();
+                if (nodeContext && !tapInstance.getHomeContext?.()) {
+                    tapInstance.onAttach?.(nodeContext);
+                }
+                
                 for (const grip of attribution.attributedGrips) {
                     // This will overwrite any existing producer for the grip, which is intended.
                     node.recordProducer(grip, producerRecord);

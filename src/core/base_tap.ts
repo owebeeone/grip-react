@@ -8,6 +8,7 @@ import type { GripContextNode, Destination, ProducerRecord } from "./graph";
 // Base implementation that manages lifecycle and home/destination bookkeeping
 export abstract class BaseTap implements Tap {
   readonly kind: 'Tap' = 'Tap';
+  readonly id: string = `tap_${Math.random().toString(36).substr(2, 9)}`;
 
   protected engine?: Grok;
   readonly provides: readonly Grip<any>[];  // Grips this tap publishes.
@@ -68,6 +69,7 @@ export abstract class BaseTap implements Tap {
     this.producer = this.homeContext
       ._getContextNode()
       .getOrCreateProducerRecord(this as unknown as Tap, this.provides);
+    console.log(`[BaseTap] onAttach: ${this.constructor.name} (id=${this.id}) attached to ${realHome.id}, producer has ${this.producer.getDestinations().size} destinations`);
 
     // Record this producer under each provided grip for visibility/resolution
     const homeNode = this.homeContext._getContextNode();
@@ -178,7 +180,6 @@ export abstract class BaseTap implements Tap {
       if (!destination) {
         // Destination might have been removed before the async produce call.
         // This is not an error; just means there's nothing to publish to.
-        console.log(`[BaseTap] publish: Destination not found for this tap: ${target.id}`);
         return 0;
       }
       destinations.push(destination);

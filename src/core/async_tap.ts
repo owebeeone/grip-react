@@ -210,11 +210,20 @@ export abstract class BaseAsyncTap extends BaseTap {
         if (this.asyncOpts.latestOnly && seq !== state.seq) return;
         if (this.asyncOpts.cacheTtlMs > 0 && key) this.cache.set(key, result, this.asyncOpts.cacheTtlMs);
         // Publish to all destinations sharing this key to keep outputs in sync
-        const destinations = Array.from(this.producer?.getDestinations().keys() ?? []);
+        if (!this.producer) {
+          console.error(`[AsyncTap] ERROR: producer is undefined after successful fetch for key=${key}. Cannot publish results.`);
+          return;
+        }
+        const destinations = Array.from(this.producer.getDestinations().keys());
+        console.log(`[AsyncTap] Publishing to ${destinations.length} destinations for key=${key}, tap=${(this as any).id}, homeContext=${this.homeContext?.id || 'NOT_ATTACHED'}`);
         for (const destNode of destinations) {
           const dctx = destNode.get_context();
-          if (!dctx) continue;
+          if (!dctx) {
+            console.log(`[AsyncTap]   - Skipping destination: context is gone`);
+            continue;
+          }
           const k2 = this.getRequestKey(dctx);
+          console.log(`[AsyncTap]   - Destination ${dctx.id} has key=${k2}, looking for key=${key}`);
           if (k2 !== key) continue;
           const updates = this.mapResultToUpdates(dctx, result);
           this.publish(updates, dctx);

@@ -38,7 +38,6 @@ export class ProducerRecord {
   }
 
   addDestinationGrip(destNode: GripContextNode, grip: Grip<any>): void {
-    console.log(`[ProducerRecord] addDestinationGrip: Adding ${grip.key} to ${destNode.id}`);
     var existing = this.destinations.get(destNode);
     var added = false;
     if (!existing) {
@@ -49,6 +48,7 @@ export class ProducerRecord {
       existing.registerDestinationParamDrips();
     }
     existing.addGrip(grip);
+    console.log(`[ProducerRecord] addDestinationGrip: Added ${grip.key} to ${destNode.id} for tap ${this.tap.constructor.name} (id=${(this.tap as any).id || 'no-id'}), now has ${this.destinations.size} destinations`);
     const destCtx = destNode.get_context();
     if (added) {
       this.tap.onConnect?.(destCtx as GripContext, grip);
@@ -413,6 +413,9 @@ export class GripContextNode implements GripContextNodeIf {
     if (!rec) {
       rec = new ProducerRecord(tap, outputs);
       this.producerByTap.set(tap, rec);
+      console.log(`[GripContextNode] Created new ProducerRecord for tap ${tap.constructor.name} (id=${(tap as any).id}) in context ${this.id}`);
+    } else {
+      console.log(`[GripContextNode] Found existing ProducerRecord for tap ${tap.constructor.name} (id=${(tap as any).id}) in context ${this.id}`);
     }
     return rec;
   }
@@ -457,7 +460,9 @@ export class GripContextNode implements GripContextNodeIf {
   // Notify the live consumer drip for a grip at this destination context
   notifyConsumers<T>(grip: Grip<T>, value: T): number {
     const d = this.getLiveDripForGrip(grip);
-    if (!d) return 0;
+    if (!d) {
+      return 0;
+    }
     d.next(value);
     return 1;
   }
