@@ -133,15 +133,13 @@ export class SimpleResolver implements IGripResolver {
             
             // Process additions
             for (const [tapOrFactory, attribution] of delta.added.entries()) {
-                // If it's a TapFactory, build the tap instance
-                const tapInstance = tapOrFactory.kind === 'TapFactory' 
-                    ? (tapOrFactory as TapFactory).build() 
-                    : tapOrFactory as Tap;
-                
-                const producerRecord = node.getOrCreateProducerRecord(tapInstance, tapInstance.provides);
+                // Pass the tap or factory directly to getOrCreateProducerRecord
+                // ProducerRecord will handle building the tap if it's a factory
+                const producerRecord = node.getOrCreateProducerRecord(tapOrFactory, tapOrFactory.provides);
                 
                 // Ensure the tap is properly attached if it isn't already
                 const nodeContext = node.get_context();
+                const tapInstance = producerRecord.tap;
                 if (nodeContext && !tapInstance.getHomeContext?.()) {
                     tapInstance.onAttach?.(nodeContext);
                 }

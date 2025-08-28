@@ -65,14 +65,15 @@ export abstract class BaseTap implements Tap {
     }
     this.homeContext = realHome;
     this.paramsContext = paramContext;
-    // Ensure a ProducerRecord exists for this tap at the home node
-    this.producer = this.homeContext
-      ._getContextNode()
-      .getOrCreateProducerRecord(this as unknown as Tap, this.provides);
+    
+    // Get or create a ProducerRecord for this tap at the home node
+    // This will return the existing one if it was already created by applyProducerDelta
+    const homeNode = this.homeContext._getContextNode();
+    this.producer = homeNode.getOrCreateProducerRecord(this as unknown as Tap, this.provides);
     console.log(`[BaseTap] onAttach: ${this.constructor.name} (id=${this.id}) attached to ${realHome.id}, producer has ${this.producer.getDestinations().size} destinations`);
 
     // Record this producer under each provided grip for visibility/resolution
-    const homeNode = this.homeContext._getContextNode();
+    // (This may be redundant if already done by applyProducerDelta, but it's safe to do again)
     for (const g of this.provides) {
       homeNode.recordProducer(g as unknown as Grip<any>, this.producer);
     }

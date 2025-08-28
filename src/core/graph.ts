@@ -390,7 +390,17 @@ export class GripContextNode implements GripContextNodeIf {
       for (const grip of producerRecord.outputs) {
         this.producers.delete(grip);
       }
+      
+      // Delete both the factory and tap instance keys if they exist
       this.producerByTap.delete(tap);
+      if (producerRecord.tapFactory) {
+        this.producerByTap.delete(producerRecord.tapFactory);
+      }
+      // Also delete the tap instance if we were called with the factory
+      if (tap === producerRecord.tapFactory && producerRecord.tap) {
+        this.producerByTap.delete(producerRecord.tap);
+      }
+      
       producerRecord.tap.onDetach?.();
     }
   }
@@ -408,14 +418,26 @@ export class GripContextNode implements GripContextNodeIf {
     this.resolvedProviders.set(grip as unknown as Grip<any>, node);
   }
 
-  getOrCreateProducerRecord(tap: Tap, outputs?: Iterable<Grip<any>>): ProducerRecord {
-    let rec = this.producerByTap.get(tap);
+  getOrCreateProducerRecord(tapOrFactory: Tap | TapFactory, outputs?: Iterable<Grip<any>>): ProducerRecord {
+    // First check if we already have a record for this tap/factory
+    let rec = this.producerByTap.get(tapOrFactory);
     if (!rec) {
-      rec = new ProducerRecord(tap, outputs);
-      this.producerByTap.set(tap, rec);
-      console.log(`[GripContextNode] Created new ProducerRecord for tap ${tap.constructor.name} (id=${(tap as any).id}) in context ${this.id}`);
+      // Create a new ProducerRecord (which will build the tap if it's a factory)
+      rec = new ProducerRecord(tapOrFactory, outputs);
+      
+      // Store the record using BOTH the original key AND the tap instance as keys
+      // This ensures we can find it whether we look up by factory or by tap instance
+      this.producerByTap.set(tapOrFactory, rec);
+      if (tapOrFactory !== rec.tap) {
+        // If we built from a factory, also store by the tap instance
+        this.producerByTap.set(rec.tap, rec);
+      }
+      
+      const tapInstance = rec.tap;
+      console.log(`[GripContextNode] Created new ProducerRecord for tap ${tapInstance.constructor.name} (id=${(tapInstance as any).id}) in context ${this.id}`);
     } else {
-      console.log(`[GripContextNode] Found existing ProducerRecord for tap ${tap.constructor.name} (id=${(tap as any).id}) in context ${this.id}`);
+      const tapInstance = rec.tap;
+      console.log(`[GripContextNode] Found existing ProducerRecord for tap ${tapInstance.constructor.name} (id=${(tapInstance as any).id}) in context ${this.id}`);
     }
     return rec;
   }
