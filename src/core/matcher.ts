@@ -18,6 +18,9 @@ import {
   RemoveBindingResult,
   evaluationToString,
 } from "./query_evaluator";
+import { consola } from "consola";
+
+const logger = consola.withTag('core/matcher.ts');
 
 /**
  * The TapMatcher is responsible for observing a 'home' context for input grip changes,
@@ -47,7 +50,7 @@ export class TapMatcher {
    * @param binding The QueryBinding to add.
    */
   public addBinding(binding: QueryBinding): void {
-    console.log(`[TapMatcher] addBinding: ${binding.id}`);
+    if (process.env.NODE_ENV !== 'production') logger.log(`[TapMatcher] addBinding: ${binding.id}`);
     const result: AddBindingResult = this.evaluator.addBinding(binding);
     result.newInputs.forEach(grip => this._subscribeToGrip(grip));
     result.removedInputs.forEach(grip => this._unsubscribeFromGrip(grip));
@@ -66,7 +69,7 @@ export class TapMatcher {
    * @param bindingId The ID of the binding to remove.
    */
   public removeBinding(bindingId: string): void {
-    console.log(`[TapMatcher] removeBinding: ${bindingId}`);
+    if (process.env.NODE_ENV !== 'production') logger.log(`[TapMatcher] removeBinding: ${bindingId}`);
     const binding = this.evaluator.getBinding(bindingId); // Assuming getBinding exists
     if (binding) {
       for (const grip of binding.query.conditions.keys()) {
@@ -135,7 +138,7 @@ export class TapMatcher {
    * Executes the query evaluator with the collected changes.
    */
   private _evaluate(): void {
-    console.log(`[TapMatcher] _evaluate: Evaluating ${this.changedGrips.size} grips.`);
+    if (process.env.NODE_ENV !== 'production') logger.log(`[TapMatcher] _evaluate: Evaluating ${this.changedGrips.size} grips.`);
     if (this.changedGrips.size === 0 && !this.isFirstEvaluation) {
       return;
     }
@@ -163,7 +166,7 @@ export class TapMatcher {
    */
   public applyAttributionDelta(delta: EvaluationDelta): void {
     // Delta is applied to the consumer/presentation context.
-    console.log(`[TapMatcher] applyAttributionDelta: Applying delta to consumer context. ${evaluationToString(delta)}`);
+    if (process.env.NODE_ENV !== 'production') logger.log(`[TapMatcher] applyAttributionDelta: Applying delta to consumer context. ${evaluationToString(delta)}`);
     this.container.getGrok().applyProducerDelta(this.container.getGripConsumerContext(), delta);
   }
 }

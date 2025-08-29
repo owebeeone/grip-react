@@ -4,6 +4,9 @@ import { Tap, TapFactory } from "./tap";
 import { Grok } from "./grok";
 import { GripContextNode, ProducerRecord } from "./graph";
 import { EvaluationDelta, TapAttribution } from "./query_evaluator";
+import { consola } from "consola";
+
+const logger = consola.withTag('core/tap_resolver.ts');
 
 function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
   const result = new Set<T>();
@@ -100,10 +103,10 @@ export class SimpleResolver implements IGripResolver {
 
     applyProducerDelta(context: GripContext | GripContextNode, delta: EvaluationDelta): void {
         const node = (context.kind === "GripContext") ? context.getNode() : context;
-        console.log(`[SimpleResolver] applyProducerDelta: Queuing delta application for ${node.id}`);
+        if (process.env.NODE_ENV !== 'production') logger.log(`[SimpleResolver] applyProducerDelta: Queuing delta application for ${node.id}`);
 
         node.submitTask(() => {
-            console.log(`[SimpleResolver] applyProducerDelta: Executing queued delta application for ${node.id}`);
+            if (process.env.NODE_ENV !== 'production') logger.log(`[SimpleResolver] applyProducerDelta: Executing queued delta application for ${node.id}`);
             // --- Step 1: Collect all affected consumers before making any changes ---
             const consumersToReResolve = new Set<{ destNode: GripContextNode; grip: Grip<any> }>();
             for (const [tap, attribution] of delta.removed.entries()) {

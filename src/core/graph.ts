@@ -5,6 +5,9 @@ import type { Tap, TapFactory } from "./tap";
 import { Grok } from "./grok";
 import { GripContextNodeIf } from "./context_node";
 import { TaskHandleHolder } from "./task_queue";
+import { consola } from "consola";
+
+const logger = consola.withTag('core/graph.ts');
 
 export class ProducerRecord {
   readonly tap: Tap;
@@ -48,7 +51,7 @@ export class ProducerRecord {
       existing.registerDestinationParamDrips();
     }
     existing.addGrip(grip);
-    console.log(`[ProducerRecord] addDestinationGrip: Added ${grip.key} to ${destNode.id} for tap ${this.tap.constructor.name} (id=${(this.tap as any).id || 'no-id'}), now has ${this.destinations.size} destinations`);
+    if (process.env.NODE_ENV !== 'production') logger.log(`[ProducerRecord] addDestinationGrip: Added ${grip.key} to ${destNode.id} for tap ${this.tap.constructor.name} (id=${(this.tap as any).id || 'no-id'}), now has ${this.destinations.size} destinations`);
     const destCtx = destNode.get_context();
     if (added) {
       this.tap.onConnect?.(destCtx as GripContext, grip);
@@ -82,7 +85,7 @@ export class ProducerRecord {
 
   // Add a destination for a grip.
   addDestination(destNode: GripContextNode, grip: Grip<any>): void {
-    console.log(`[ProducerRecord] addDestination: Adding ${grip.key} to ${destNode.id}`);
+    if (process.env.NODE_ENV !== 'production') logger.log(`[ProducerRecord] addDestination: Adding ${grip.key} to ${destNode.id}`);
     var existing = this.destinations.get(destNode);
     if (!existing) {
       existing = new Destination(destNode, this.tap, this);
@@ -95,7 +98,7 @@ export class ProducerRecord {
 
   // Remove the context/grip pair from this producer.
   removeDestinationGripForContext(destNode: GripContextNode, grip: Grip<any>): void {
-    console.log(`[ProducerRecord] removeDestinationGripForContext: Removing ${grip.key} from ${destNode.id}`);
+    if (process.env.NODE_ENV !== 'production') logger.log(`[ProducerRecord] removeDestinationGripForContext: Removing ${grip.key} from ${destNode.id}`);
     const destination = this.destinations.get(destNode);
     if (destination) {
       destination.removeGrip(grip);
@@ -430,10 +433,10 @@ export class GripContextNode implements GripContextNodeIf {
       }
       
       const tapInstance = rec.tap;
-      console.log(`[GripContextNode] Created new ProducerRecord for tap ${tapInstance.constructor.name} (id=${(tapInstance as any).id}) in context ${this.id}`);
+      if (process.env.NODE_ENV !== 'production') logger.log(`[GripContextNode] Created new ProducerRecord for tap ${tapInstance.constructor.name} (id=${(tapInstance as any).id}) in context ${this.id}`);
     } else {
       const tapInstance = rec.tap;
-      console.log(`[GripContextNode] Found existing ProducerRecord for tap ${tapInstance.constructor.name} (id=${(tapInstance as any).id}) in context ${this.id}`);
+      if (process.env.NODE_ENV !== 'production') logger.log(`[GripContextNode] Found existing ProducerRecord for tap ${tapInstance.constructor.name} (id=${(tapInstance as any).id}) in context ${this.id}`);
     }
     return rec;
   }
@@ -577,7 +580,6 @@ export class GrokGraph {
       node = new GripContextNode(this.grok, ctx);
       this.nodes.set(ctx.id, node);
       this.weakNodes.set(ctx.id, new WeakRef(node));
-      //console.log(`GrokGraph: Created new node for context: ${ctx.id}`);
       // Connect parents hard
       for (const { ctx: parentCtx, priority } of ctx.getParents()) {
         const parentNode = this.ensureNode(parentCtx);
@@ -585,7 +587,6 @@ export class GrokGraph {
       }
       this.startGcIfNeeded();
     } else {
-      //console.log(`GrokGraph: Retrieved existing node for context: ${ctx.id}`);
     }
     node.touch();
     return node;
@@ -640,7 +641,7 @@ export class GrokGraph {
     }
 
     if (missingNodes.size > 0) {
-      console.log(
+      if (process.env.NODE_ENV !== 'production') logger.log(
         `GrokGraph: snapshotSanityCheck: found ${missingNodes.size} orphaned nodes: ${Array.from(missingNodes).map(n => n.id).join(", ")}`);
     }
 
@@ -652,7 +653,7 @@ export class GrokGraph {
       if (node) {
         if (!allNodes.has(node.id)) {
           nodesNotReaped.add(node);
-          console.warn(`GrokGraph: Sanity Check Warning: Node ${id} is in the active graph but not in the weakNodes map. This indicates an inconsistency.`);
+          if (process.env.NODE_ENV !== 'production') logger.warn(`GrokGraph: Sanity Check Warning: Node ${id} is in the active graph but not in the weakNodes map. This indicates an inconsistency.`);
         }
       } else {
         weakNodesToDelete.add(id);

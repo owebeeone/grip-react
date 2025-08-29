@@ -25,7 +25,6 @@ export class GripContext implements GripContextLike {
   constructor(engine: Grok, id?: string) {
     this.grok = engine;
     this.id = id ?? `ctx_${Math.random().toString(36).slice(2)}`;
-    //console.log(`GripContext: Created new context with ID: ${this.id}`);
     this.contextNode = engine.ensureNode(this);
   }
 

@@ -5,6 +5,9 @@ import type { AsyncCache } from "./async_cache";
 import { LruTtlCache } from "./async_cache";
 import type { Tap } from "./tap";
 import type { GripRecord, GripValue, Values, FunctionTapHandle } from "./function_tap";
+import { consola } from "consola";
+
+const logger = consola.withTag('core/async_tap.ts');
 
 interface DestState {
   controller?: AbortController;
@@ -211,19 +214,19 @@ export abstract class BaseAsyncTap extends BaseTap {
         if (this.asyncOpts.cacheTtlMs > 0 && key) this.cache.set(key, result, this.asyncOpts.cacheTtlMs);
         // Publish to all destinations sharing this key to keep outputs in sync
         if (!this.producer) {
-          console.error(`[AsyncTap] ERROR: producer is undefined after successful fetch for key=${key}. Cannot publish results.`);
+          if (process.env.NODE_ENV !== 'production') logger.error(`[AsyncTap] ERROR: producer is undefined after successful fetch for key=${key}. Cannot publish results.`);
           return;
         }
         const destinations = Array.from(this.producer.getDestinations().keys());
-        console.log(`[AsyncTap] Publishing to ${destinations.length} destinations for key=${key}, tap=${(this as any).id}, homeContext=${this.homeContext?.id || 'NOT_ATTACHED'}`);
+        if (process.env.NODE_ENV !== 'production') logger.log(`[AsyncTap] Publishing to ${destinations.length} destinations for key=${key}, tap=${(this as any).id}, homeContext=${this.homeContext?.id || 'NOT_ATTACHED'}`);
         for (const destNode of destinations) {
           const dctx = destNode.get_context();
           if (!dctx) {
-            console.log(`[AsyncTap]   - Skipping destination: context is gone`);
+            if (process.env.NODE_ENV !== 'production') logger.log(`[AsyncTap]   - Skipping destination: context is gone`);
             continue;
           }
           const k2 = this.getRequestKey(dctx);
-          console.log(`[AsyncTap]   - Destination ${dctx.id} has key=${k2}, looking for key=${key}`);
+          if (process.env.NODE_ENV !== 'production') logger.log(`[AsyncTap]   - Destination ${dctx.id} has key=${k2}, looking for key=${key}`);
           if (k2 !== key) continue;
           const updates = this.mapResultToUpdates(dctx, result);
           this.publish(updates, dctx);

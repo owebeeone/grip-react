@@ -4,6 +4,9 @@ import type { GripContext, GripContextLike } from "./context";
 import type { Grok } from "./grok";
 import type { Tap } from "./tap";
 import type { GripContextNode, Destination, ProducerRecord } from "./graph";
+import { consola } from "consola";
+
+const logger = consola.withTag('core/base_tap.ts');
 
 // Base implementation that manages lifecycle and home/destination bookkeeping
 export abstract class BaseTap implements Tap {
@@ -70,7 +73,7 @@ export abstract class BaseTap implements Tap {
     // This will return the existing one if it was already created by applyProducerDelta
     const homeNode = this.homeContext._getContextNode();
     this.producer = homeNode.getOrCreateProducerRecord(this as unknown as Tap, this.provides);
-    console.log(`[BaseTap] onAttach: ${this.constructor.name} (id=${this.id}) attached to ${realHome.id}, producer has ${this.producer.getDestinations().size} destinations`);
+    if (process.env.NODE_ENV !== 'production') logger.log(`[BaseTap] onAttach: ${this.constructor.name} (id=${this.id}) attached to ${realHome.id}, producer has ${this.producer.getDestinations().size} destinations`);
 
     // Record this producer under each provided grip for visibility/resolution
     // (This may be redundant if already done by applyProducerDelta, but it's safe to do again)
