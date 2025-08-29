@@ -1,3 +1,15 @@
+/**
+ * Base Tap Implementation - Core lifecycle and parameter management
+ * 
+ * Abstract base class providing common Tap functionality:
+ * - Lifecycle management (attach/detach/connect/disconnect)
+ * - Parameter subscription and change handling
+ * - Destination management and value publishing
+ * - Home vs destination parameter distinction
+ * 
+ * Subclasses implement produce() and optionally produceOnParams()/produceOnDestParams().
+ */
+
 import { Drip, Unsubscribe } from "./drip";
 import { Grip } from "./grip";
 import type { GripContext, GripContextLike } from "./context";
@@ -8,17 +20,25 @@ import { consola } from "consola";
 
 const logger = consola.withTag("core/base_tap.ts");
 
-// Base implementation that manages lifecycle and home/destination bookkeeping
+/**
+ * Base Tap implementation managing lifecycle and parameter bookkeeping.
+ * 
+ * Handles:
+ * - Tap registration with GROK engine
+ * - Parameter subscription and change notifications
+ * - Destination management and value publishing
+ * - Context resolution (home vs consumer contexts)
+ */
 export abstract class BaseTap implements Tap {
   readonly kind: "Tap" = "Tap";
   readonly id: string = `tap_${Math.random().toString(36).substr(2, 9)}`;
 
   protected engine?: Grok;
-  readonly provides: readonly Grip<any>[]; // Grips this tap publishes.
-  readonly destinationParamGrips?: readonly Grip<any>[]; // Grips this tap reads from the destination context.
-  readonly homeParamGrips?: readonly Grip<any>[]; // Grips this tap reads from the paramsContext.
-  protected homeContext?: GripContext; // The context that this tap publishes to.
-  protected paramsContext?: GripContext; // The context that provides incoming parameters.
+  readonly provides: readonly Grip<any>[]; // Grips this tap publishes
+  readonly destinationParamGrips?: readonly Grip<any>[]; // Grips read from destination context
+  readonly homeParamGrips?: readonly Grip<any>[]; // Grips read from paramsContext
+  protected homeContext?: GripContext; // Context this tap publishes to
+  protected paramsContext?: GripContext; // Context providing incoming parameters
   protected paramDrips: Map<Grip<any>, Drip<any>> = new Map();
   protected paramDripsSubs: Map<Grip<any>, Unsubscribe> = new Map();
   protected producer?: ProducerRecord;
@@ -34,8 +54,7 @@ export abstract class BaseTap implements Tap {
     this.destinationParamGrips = opts.destinationParamGrips;
     this.homeParamGrips = opts.homeParamGrips;
 
-    // Make sure that none of the destinationParamGrips are in the provides.
-    // We can't produce what we consume.
+    // Validate: can't produce what we consume
     if (opts.destinationParamGrips) {
       for (const grip of opts.destinationParamGrips) {
         if (this.provides.includes(grip)) {
@@ -53,7 +72,15 @@ export abstract class BaseTap implements Tap {
     return this.paramsContext;
   }
 
-  // Called when the tap is attached to a home context.
+  /**
+   * Called when tap is attached to a home context.
+   * 
+   * Sets up:
+   * - Context references (home/params)
+   * - Producer record registration
+   * - GROK engine discovery
+   * - Parameter subscriptions
+   */
   onAttach(home: GripContext | GripContextLike): void {
     var realHome: GripContext;
     var paramContext: GripContext;
@@ -68,8 +95,7 @@ export abstract class BaseTap implements Tap {
     this.homeContext = realHome;
     this.paramsContext = paramContext;
 
-    // Get or create a ProducerRecord for this tap at the home node
-    // This will return the existing one if it was already created by applyProducerDelta
+    // Get or create ProducerRecord for this tap at home node
     const homeNode = this.homeContext._getContextNode();
     this.producer = homeNode.getOrCreateProducerRecord(this as unknown as Tap, this.provides);
     if (process.env.NODE_ENV !== "production")
@@ -77,26 +103,28 @@ export abstract class BaseTap implements Tap {
         `[BaseTap] onAttach: ${this.constructor.name} (id=${this.id}) attached to ${realHome.id}, producer has ${this.producer.getDestinations().size} destinations`,
       );
 
-    // Record this producer under each provided grip for visibility/resolution
-    // (This may be redundant if already done by applyProducerDelta, but it's safe to do again)
+    // Record producer under each provided grip for resolution
     for (const g of this.provides) {
       homeNode.recordProducer(g as unknown as Grip<any>, this.producer);
     }
 
-    // Discover engine from context (engine ensures this linkage)
+    // Discover engine from context
     const grok: Grok = realHome.getGrok();
     this.engine = grok;
 
     this.subscribeToIncomingParams();
   }
 
-  // Subscribe to the incoming parameter drips.
+  /**
+   * Subscribe to home parameter drips.
+   * 
+   * Only subscribes to homeParamGrips at params/home context.
+   * Destination param subscriptions handled per-destination in Destination.registerDestinationParamDrips().
+   */
   private subscribeToIncomingParams(): void {
-    // Subscribe only to homeParamGrips at the params/home context.
-    // Destination param subscriptions are handled per-destination in Destination.registerDestinationParamDrips().
     if (!this.paramsContext || !this.homeParamGrips || this.homeParamGrips.length === 0) return;
 
-    this.delayedUpdates = true; // Delay updates while we subscribe to the incoming parameter drips.
+    this.delayedUpdates = true; // Delay updates during subscription
     const self = this;
 
     for (const paramGrip of this.homeParamGrips) {
@@ -109,6 +137,11 @@ export abstract class BaseTap implements Tap {
     }
   }
 
+  /**
+   * Called when a home parameter changes.
+   * 
+   * Queues parameter update and calls produceOnParams if not in delayed mode.
+   */
   inputParmsChanged(paramGrip: Grip<any>): void {
     this.paramUpdates.add(paramGrip);
     if (!this.delayedUpdates) {
@@ -116,11 +149,19 @@ export abstract class BaseTap implements Tap {
     }
   }
 
+  /**
+   * Called when tap is detached.
+   * 
+   * Cleans up:
+   * - Context references
+   * - Parameter subscriptions
+   * - Producer record
+   */
   onDetach(): void {
     this.engine = undefined;
     this.homeContext = undefined;
     this.producer = undefined;
-    // Clean up any home/params subscriptions
+    // Clean up parameter subscriptions
     for (const unsub of this.paramDripsSubs.values()) {
       try {
         unsub();
@@ -130,33 +171,46 @@ export abstract class BaseTap implements Tap {
     this.paramDrips.clear();
   }
 
+  /**
+   * Get destinations for a specific grip at a context node.
+   */
   getDestinationsForNode(node: GripContextNode, grip: Grip<any>): Destination | undefined {
-    // Get the ProducerRecord for this grip.
     const producer = node.get_producers().get(grip);
     if (!producer) throw new Error("Grip not produced by this tap");
 
-    // Get the destinations record for this producer.
     const destination = producer.getDestinations().get(node);
     return destination;
   }
 
+  /**
+   * Called when tap connects to a destination.
+   * 
+   * Always publishes initial values for the destination.
+   */
   onConnect(dest: GripContext, grip: Grip<any>): void {
-    // Always publish initial values for this destination upon connect
     this.produce({ destContext: dest });
   }
 
+  /**
+   * Called when tap disconnects from a destination.
+   * 
+   * Removes the grip from the destination's grip list.
+   */
   onDisconnect(dest: GripContext, grip: Grip<any>): void {
     const destination = this.getDestination(dest);
     if (!destination) throw new Error("Destination not found for this tap");
     destination.removeGrip(grip);
   }
 
+  /**
+   * Get destination record for a specific context.
+   */
   getDestination(dest: GripContext): Destination | undefined {
     return this.producer?.getDestinations().get(dest._getContextNode());
   }
 
   /**
-   * Convenience: read a destination parameter value for a specific grip without exposing Destination.
+   * Read destination parameter value for a specific grip.
    */
   protected getDestParamValue<T>(dest: GripContext, grip: Grip<T>): T | undefined {
     const d = this.getDestination(dest);
@@ -164,21 +218,26 @@ export abstract class BaseTap implements Tap {
   }
 
   /**
-   * Convenience: snapshot of all destination parameter values as a map.
+   * Get snapshot of all destination parameter values.
    */
   protected getAllDestParamValues(dest: GripContext): Map<Grip<any>, any> | undefined {
     const d = this.getDestination(dest);
     return d?.getAllDestinationParamValues();
   }
 
-  // This will publish the updates to a single destination or all destinations.
-  // If this tap has destinationParamGrips, then it's assumed that each destination
-  // will have a different set of updates, however, it's up to the tap implementation
-  // to determine which updates to publish to which destination.
+  /**
+   * Publish updates to destinations.
+   * 
+   * If target specified, publishes only to that destination.
+   * Otherwise publishes to all destinations.
+   * 
+   * @param updates - Map of grip values to publish
+   * @param target - Optional specific destination context
+   * @returns Number of consumers notified
+   */
   protected publish(updates: Map<Grip<any>, any>, target?: GripContext): number {
     if (!this.engine || !this.homeContext || !this.producer) {
-      // If the tap isn't fully attached yet, treat as no-op publish.
-      return 0;
+      return 0; // Not fully attached yet
     }
 
     var destinations: Destination[] = [];
@@ -186,9 +245,7 @@ export abstract class BaseTap implements Tap {
       const destNode = target._getContextNode();
       const destination = this.producer.getDestinations().get(destNode);
       if (!destination) {
-        // Destination might have been removed before the async produce call.
-        // This is not an error; just means there's nothing to publish to.
-        return 0;
+        return 0; // Destination removed before async produce call
       }
       destinations.push(destination);
     } else {
@@ -208,32 +265,52 @@ export abstract class BaseTap implements Tap {
     return count;
   }
 
-  // Produce for the current state. If destContext is provided, then only
-  // provide the updates for the destination context provided.
+  /**
+   * Produce current state values.
+   * 
+   * If destContext provided, produces only for that destination.
+   * Subclasses must implement this method.
+   */
   abstract produce(opts?: { destContext?: GripContext }): void;
 
-  // A grip on an input parameter has changed.
+  /**
+   * Called when a home parameter changes.
+   * 
+   * Optional override for taps that need to react to home parameter changes.
+   */
   abstract produceOnParams?(paramGrip: Grip<any>): void;
 
-  // A grip on a destination parameter has changed.
+  /**
+   * Called when a destination parameter changes.
+   * 
+   * Optional override for taps that need to react to destination parameter changes.
+   */
   abstract produceOnDestParams?(destContext: GripContext | undefined, paramGrip: Grip<any>): void;
 
-  // Protected helper to get destination params
+  /**
+   * Get destination parameters for a specific context.
+   */
   protected getDestinationParams(destContext: GripContext): DestinationParams | undefined {
     return this.producer?.getDestinationParams(destContext);
   }
 }
 
 /**
- * Base tap that doesn't have any parameters.
+ * Base tap without parameters.
+ * 
+ * Simplified base class for taps that don't read any parameters.
+ * Throws on parameter change callbacks since they shouldn't be called.
  */
 export abstract class BaseTapNoParams extends BaseTap {
   constructor(opts: { provides: readonly Grip<any>[] }) {
     super({ provides: opts.provides });
   }
 
-  // Produce for the current state. If destContext is provided, then only
-  // provide the updates for the destination context provided.
+  /**
+   * Produce current state values.
+   * 
+   * Subclasses must implement this method.
+   */
   abstract produce(opts?: { destContext?: GripContext }): void;
 
   produceOnParams?(paramGrip: Grip<any>): void {

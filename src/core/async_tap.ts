@@ -1,3 +1,27 @@
+/**
+ * GRIP Async Tap System - Asynchronous data fetching with caching and cancellation
+ * 
+ * Provides base classes and factory functions for creating Taps that fetch data
+ * asynchronously from external sources (APIs, databases, etc.). Handles complex
+ * scenarios like request deduplication, caching, cancellation, and stale-while-revalidate.
+ * 
+ * Key Features:
+ * - Per-destination request cancellation and state management
+ * - LRU-TTL caching with configurable TTL
+ * - Request deduplication and coalescing
+ * - Deadline-based request timeouts
+ * - Stale-while-revalidate pattern
+ * - Latest-only request filtering
+ * - Home-only and destination-aware variants
+ * 
+ * Architecture:
+ * - BaseAsyncTap: Abstract base with async lifecycle management
+ * - SingleOutputAsyncTap: Single Grip output with destination parameters
+ * - SingleOutputHomeAsyncTap: Single Grip output with home parameters only
+ * - MultiOutputAsyncTap: Multiple Grip outputs with optional state management
+ * - MultiOutputHomeAsyncTap: Multi-output with home parameters only
+ */
+
 import { BaseTap } from "./base_tap";
 import { Grip } from "./grip";
 import type { GripContext } from "./context";
@@ -10,6 +34,16 @@ import { consola } from "consola";
 
 const logger = consola.withTag("core/async_tap.ts");
 
+/**
+ * Per-destination state tracking for async operations.
+ * 
+ * Manages:
+ * - AbortController for request cancellation
+ * - Request sequence numbers for latest-only filtering
+ * - Request keys for caching and deduplication
+ * - Deadline timers for request timeouts
+ * - Retry state for failed requests
+ */
 interface DestState {
   controller?: AbortController;
   seq: number;
@@ -18,17 +52,38 @@ interface DestState {
   pendingRetryArmed?: boolean;
 }
 
+/**
+ * Configuration options for async Taps.
+ * 
+ * @param debounceMs - Debounce parameter changes (apply at caller site)
+ * @param cache - Custom cache implementation (default: LruTtlCache)
+ * @param cacheTtlMs - Cache TTL in milliseconds (0 = no caching)
+ * @param latestOnly - Only process latest request per destination (default: true)
+ * @param deadlineMs - Request timeout in milliseconds (0 = no timeout)
+ */
 export interface BaseAsyncTapOptions {
-  debounceMs?: number; // apply at the caller site or via param-change coalescing
+  debounceMs?: number;
   cache?: AsyncCache<string, unknown>;
   cacheTtlMs?: number;
-  latestOnly?: boolean; // default true
-  deadlineMs?: number; // optional overall timeout per request
+  latestOnly?: boolean;
+  deadlineMs?: number;
 }
 
 /**
- * Base class for async taps with per-destination cancellation, caching and deadlines.
- * Subclasses implement request building and result mapping.
+ * Base class for async Taps with comprehensive async lifecycle management.
+ * 
+ * Handles:
+ * - Per-destination request cancellation and state tracking
+ * - Request deduplication and caching
+ * - Stale-while-revalidate pattern
+ * - Deadline-based timeouts
+ * - Latest-only request filtering
+ * 
+ * Subclasses implement:
+ * - getRequestKey: Generate cache key from parameters
+ * - buildRequest: Execute async request
+ * - mapResultToUpdates: Convert result to Grip updates
+ * - getResetUpdates: Generate reset values when request fails
  */
 export abstract class BaseAsyncTap extends BaseTap {
   protected readonly asyncOpts: Required<BaseAsyncTapOptions>;
@@ -60,6 +115,9 @@ export abstract class BaseAsyncTap extends BaseTap {
     this.cache = this.asyncOpts.cache;
   }
 
+  /**
+   * Get or create destination state for async operations.
+   */
   protected getDestState(dest: GripContext): DestState {
     let s = this.destState.get(dest);
     if (!s) {
@@ -69,26 +127,54 @@ export abstract class BaseAsyncTap extends BaseTap {
     return s;
   }
 
+  /**
+   * Generate request key from destination parameters.
+   * 
+   * Return undefined if parameters are insufficient for request.
+   * Used for caching and request deduplication.
+   */
   protected abstract getRequestKey(params: DestinationParams): string | undefined;
+
+  /**
+   * Execute async request with abort signal.
+   * 
+   * Should respect the AbortSignal for cancellation.
+   */
   protected abstract buildRequest(params: DestinationParams, signal: AbortSignal): Promise<unknown>;
+
+  /**
+   * Convert request result to Grip value updates.
+   */
   protected abstract mapResultToUpdates(
     params: DestinationParams,
     result: unknown,
   ): Map<Grip<any>, any>;
+
+  /**
+   * Generate reset values when request fails or parameters are insufficient.
+   */
   protected abstract getResetUpdates(params: DestinationParams): Map<Grip<any>, any>;
 
-  // Hooked by BaseTap when destination params change
+  /**
+   * Called when destination parameters change.
+   * 
+   * Triggers request if parameters are sufficient for request key generation.
+   */
   produceOnDestParams(destContext: GripContext | undefined): void {
     if (!destContext) return;
     const params = this.getDestinationParams(destContext);
     if (!params) return;
-    // Only kickoff when requestKey is resolvable (dest params defined)
+    // Only kickoff when requestKey is resolvable
     const key = this.getRequestKey(params);
     if (!key) return;
     this.kickoff(destContext);
   }
 
-  // Recompute for all destinations or a specific one
+  /**
+   * Produce for all destinations or specific destination.
+   * 
+   * @param opts.forceRefetch - Bypass cache and force new request
+   */
   produce(opts?: { destContext?: GripContext; forceRefetch?: boolean }): void {
     if (opts?.destContext) {
       this.kickoff(opts.destContext, opts.forceRefetch === true);
@@ -102,19 +188,30 @@ export abstract class BaseAsyncTap extends BaseTap {
     }
   }
 
-  // Home params changed → update all destinations
+  /**
+   * Home parameters changed - update all destinations.
+   */
   produceOnParams(): void {
     this.produce();
   }
 
+  /**
+   * Override to trigger produce only on first destination connection.
+   * 
+   * Prevents unnecessary requests when multiple destinations connect simultaneously.
+   */
   onConnect(dest: GripContext, grip: Grip<any>): void {
-    // Override base to trigger produce ONLY if this is the first connected destination
     if ((this.producer?.getDestinations().size ?? 0) === 1) {
       super.onConnect(dest, grip);
     }
     this.kickoff(dest);
   }
 
+  /**
+   * Clean up destination state on disconnect.
+   * 
+   * Aborts in-flight requests and clears timers.
+   */
   onDisconnect(dest: GripContext, grip: Grip<any>): void {
     try {
       const s = this.destState.get(dest);
@@ -132,9 +229,13 @@ export abstract class BaseAsyncTap extends BaseTap {
     }
   }
 
+  /**
+   * Clean up all async operations on detach.
+   * 
+   * Aborts all controllers and clears all timers.
+   */
   onDetach(): void {
     try {
-      // cancel everything without iterating WeakMap keys
       for (const c of this.allControllers) {
         try {
           c.abort();
@@ -152,13 +253,23 @@ export abstract class BaseAsyncTap extends BaseTap {
     }
   }
 
+  /**
+   * Core async request orchestration.
+   * 
+   * Handles:
+   * - Request key generation and validation
+   * - Cache lookup and stale-while-revalidate
+   * - Request deduplication
+   * - AbortController and deadline management
+   * - Result publishing to all matching destinations
+   */
   private kickoff(dest: GripContext, forceRefetch?: boolean): void {
     const state = this.getDestState(dest);
     const prevKey = state.key;
 
     const params = this.getDestinationParams(dest);
     if (!params) {
-      // Can't get params, abort
+      // Can't get params, abort and clear outputs
       if (state.controller) state.controller.abort();
       state.key = undefined;
       return;
@@ -166,7 +277,7 @@ export abstract class BaseAsyncTap extends BaseTap {
 
     const key = this.getRequestKey(params);
 
-    // If params are insufficient now → abort any in-flight and clear outputs
+    // Parameters insufficient - abort and reset outputs
     if (!key) {
       if (state.controller) state.controller.abort();
       state.key = undefined;
@@ -175,10 +286,12 @@ export abstract class BaseAsyncTap extends BaseTap {
       return;
     }
 
-    // If the effective request key changed → abort previous request; keep last values until new ones arrive (stale-while-revalidate)
+    // Request key changed - abort previous request (stale-while-revalidate)
     if (prevKey !== undefined && prevKey !== key) {
       if (state.controller) state.controller.abort();
     }
+
+    // Check cache first
     const cached = this.asyncOpts.cacheTtlMs > 0 && !forceRefetch ? this.cache.get(key) : undefined;
     if (cached) {
       // Publish cached value to all destinations sharing this key
@@ -193,22 +306,23 @@ export abstract class BaseAsyncTap extends BaseTap {
         if (k2 !== key) continue;
         const updates = this.mapResultToUpdates(dparams, cached.value);
         this.publish(updates, dctx);
-        // Mark each destination's state with the effective key to prevent repeated resets
+        // Mark destination state to prevent repeated resets
         try {
           this.getDestState(dctx).key = key;
         } catch {}
       }
       return;
     }
-    // If a request for this key is already in-flight, wait for it and then publish from cache
+
+    // Check for in-flight request with same key
     const existing = this.pending.get(key);
     if (existing) {
-      // Arm a one-time retry for this destination if the pending completes without a cache entry
+      // Arm retry for this destination if pending completes without cache entry
       state.pendingRetryArmed = true;
       existing
         .then(() => {
           const fromCache = this.cache.get(key);
-          if (!fromCache) return; // publish handled below in finally
+          if (!fromCache) return; // publish handled in finally
         })
         .catch(() => {
           /* ignore; handled in finally */
@@ -232,7 +346,7 @@ export abstract class BaseAsyncTap extends BaseTap {
               } catch {}
             }
           } else if (state.pendingRetryArmed && this.pending.get(key) === undefined) {
-            // No cache was produced; if dest still targets this key, retry once
+            // No cache produced; retry once if destination still targets this key
             state.pendingRetryArmed = false;
             const destParams = this.getDestinationParams(dest);
             if (destParams && this.getRequestKey(destParams) === key) {
@@ -242,6 +356,7 @@ export abstract class BaseAsyncTap extends BaseTap {
         });
       return;
     }
+
     // Start new request
     state.seq += 1;
     const seq = state.seq;
@@ -250,6 +365,8 @@ export abstract class BaseAsyncTap extends BaseTap {
     state.controller = controller;
     this.allControllers.add(controller);
     state.key = key;
+
+    // Set up deadline timer
     if (state.deadlineTimer) {
       clearTimeout(state.deadlineTimer);
       this.allTimers.delete(state.deadlineTimer);
@@ -259,14 +376,19 @@ export abstract class BaseAsyncTap extends BaseTap {
       state.deadlineTimer = setTimeout(() => controller.abort(), this.asyncOpts.deadlineMs);
       this.allTimers.add(state.deadlineTimer);
     }
+
+    // Execute request
     const promise = this.buildRequest(params, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
         // Latest-only guard
         if (this.asyncOpts.latestOnly && seq !== state.seq) return;
+        
+        // Cache result if TTL configured
         if (this.asyncOpts.cacheTtlMs > 0 && key)
           this.cache.set(key, result, this.asyncOpts.cacheTtlMs);
-        // Publish to all destinations sharing this key to keep outputs in sync
+        
+        // Publish to all destinations sharing this key
         if (!this.producer) {
           if (process.env.NODE_ENV !== "production")
             logger.error(
@@ -318,6 +440,11 @@ export abstract class BaseAsyncTap extends BaseTap {
   }
 }
 
+/**
+ * Configuration for single-output async Taps with destination parameters.
+ * 
+ * @template T - The type of value provided by the Tap
+ */
 export interface AsyncValueTapConfig<T> extends BaseAsyncTapOptions {
   provides: Grip<T>;
   destinationParamGrips?: readonly Grip<any>[];
@@ -326,7 +453,13 @@ export interface AsyncValueTapConfig<T> extends BaseAsyncTapOptions {
   fetcher: (params: DestinationParams, signal: AbortSignal) => Promise<T>;
 }
 
-// Variant for taps that only need home parameters (same for all destinations)
+/**
+ * Configuration for single-output async Taps with home parameters only.
+ * 
+ * Same request for all destinations, no destination-specific parameters.
+ * 
+ * @template T - The type of value provided by the Tap
+ */
 export interface AsyncHomeValueTapConfig<T> extends BaseAsyncTapOptions {
   provides: Grip<T>;
   homeParamGrips?: readonly Grip<any>[];
@@ -334,10 +467,16 @@ export interface AsyncHomeValueTapConfig<T> extends BaseAsyncTapOptions {
   fetcher: (homeParams: ReadonlyMap<Grip<any>, any>, signal: AbortSignal) => Promise<T>;
 }
 
+/**
+ * Single-output async Tap implementation.
+ * 
+ * Provides one Grip with destination-aware parameter handling.
+ */
 class SingleOutputAsyncTap<T> extends BaseAsyncTap {
   private readonly out: Grip<T>;
   private readonly keyOf: (params: DestinationParams) => string | undefined;
   private readonly fetcher: (params: DestinationParams, signal: AbortSignal) => Promise<T>;
+  
   constructor(cfg: AsyncValueTapConfig<T>) {
     super({
       provides: [cfg.provides],
@@ -349,17 +488,21 @@ class SingleOutputAsyncTap<T> extends BaseAsyncTap {
     this.keyOf = cfg.requestKeyOf;
     this.fetcher = cfg.fetcher;
   }
+  
   protected getRequestKey(params: DestinationParams): string | undefined {
     return this.keyOf(params);
   }
+  
   protected buildRequest(params: DestinationParams, signal: AbortSignal): Promise<unknown> {
     return this.fetcher(params, signal);
   }
+  
   protected mapResultToUpdates(_params: DestinationParams, result: unknown): Map<Grip<any>, any> {
     const updates = new Map<Grip<any>, any>();
     updates.set(this.out as unknown as Grip<any>, result as T);
     return updates;
   }
+  
   protected getResetUpdates(_params: DestinationParams): Map<Grip<any>, any> {
     const updates = new Map<Grip<any>, any>();
     updates.set(this.out as unknown as Grip<any>, undefined as unknown as T);
@@ -367,12 +510,18 @@ class SingleOutputAsyncTap<T> extends BaseAsyncTap {
   }
 }
 
+/**
+ * Factory for single-output async Taps with destination parameters.
+ */
 export function createAsyncValueTap<T>(cfg: AsyncValueTapConfig<T>): Tap {
-  // Do not leak class type; return as Tap
   return new SingleOutputAsyncTap<T>(cfg) as unknown as Tap;
 }
 
-// Home-only variant
+/**
+ * Single-output async Tap with home parameters only.
+ * 
+ * Same request for all destinations, no destination-specific parameters.
+ */
 class SingleOutputHomeAsyncTap<T> extends BaseAsyncTap {
   private readonly out: Grip<T>;
   private readonly keyOf: (homeParams: ReadonlyMap<Grip<any>, any>) => string | undefined;
@@ -409,12 +558,20 @@ class SingleOutputHomeAsyncTap<T> extends BaseAsyncTap {
   }
 }
 
+/**
+ * Factory for single-output async Taps with home parameters only.
+ */
 export function createAsyncHomeValueTap<T>(cfg: AsyncHomeValueTapConfig<T>): Tap {
-  // Do not leak class type; return as Tap
   return new SingleOutputHomeAsyncTap<T>(cfg) as unknown as Tap;
 }
 
-// Multi-output async tap
+/**
+ * Configuration for multi-output async Taps with optional state management.
+ * 
+ * @template Outs - Record type defining the output Grips
+ * @template R - The raw result type from the fetcher
+ * @template StateRec - Record type defining state Grips
+ */
 export interface AsyncMultiTapConfig<
   Outs extends GripRecord,
   R = unknown,
@@ -441,7 +598,13 @@ export interface AsyncMultiTapConfig<
   ) => ReadonlyMap<Values<Outs>, GripValue<Values<Outs>>>;
 }
 
-// Variant for multi-taps that only need home parameters (same for all destinations)
+/**
+ * Configuration for multi-output async Taps with home parameters only.
+ * 
+ * @template Outs - Record type defining the output Grips
+ * @template R - The raw result type from the fetcher
+ * @template StateRec - Record type defining state Grips
+ */
 export interface AsyncHomeMultiTapConfig<
   Outs extends GripRecord,
   R = unknown,
@@ -467,6 +630,12 @@ export interface AsyncHomeMultiTapConfig<
   ) => ReadonlyMap<Values<Outs>, GripValue<Values<Outs>>>;
 }
 
+/**
+ * Multi-output async Tap with optional state management.
+ * 
+ * Provides multiple Grips with destination-aware parameter handling.
+ * Implements FunctionTapHandle for state management when configured.
+ */
 class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecord>
   extends BaseAsyncTap
   implements FunctionTapHandle<StateRec>
@@ -488,6 +657,7 @@ class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecor
   ) => ReadonlyMap<Values<Outs>, GripValue<Values<Outs>>>;
   readonly handleGrip?: Grip<FunctionTapHandle<StateRec>>;
   readonly state = new Map<Grip<any>, any>();
+  
   constructor(cfg: AsyncMultiTapConfig<Outs, R, StateRec>) {
     const providesList = (cfg.handleGrip
       ? [...cfg.provides, cfg.handleGrip]
@@ -510,12 +680,15 @@ class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecor
       for (const [g, v] of it) this.state.set(g, v);
     }
   }
+  
   protected getRequestKey(params: DestinationParams): string | undefined {
     return this.keyOf(params, this.getState.bind(this) as any);
   }
+  
   protected buildRequest(params: DestinationParams, signal: AbortSignal): Promise<unknown> {
     return this.fetcher(params, signal, this.getState.bind(this) as any);
   }
+  
   protected mapResultToUpdates(params: DestinationParams, result: unknown): Map<Grip<any>, any> {
     const typed = this.mapper(params, result as R, this.getState.bind(this) as any);
     const updates = new Map<Grip<any>, any>();
@@ -530,6 +703,7 @@ class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecor
     }
     return updates;
   }
+  
   protected getResetUpdates(_params: DestinationParams): Map<Grip<any>, any> {
     const updates = new Map<Grip<any>, any>();
     for (const g of this.outs) {
@@ -538,9 +712,11 @@ class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecor
     // Do not touch handleGrip on reset
     return updates;
   }
+  
   getState<K extends keyof StateRec>(grip: StateRec[K]): GripValue<StateRec[K]> | undefined {
     return this.state.get(grip as unknown as Grip<any>) as GripValue<StateRec[K]> | undefined;
   }
+  
   setState<K extends keyof StateRec>(
     grip: StateRec[K],
     value: GripValue<StateRec[K]> | undefined,
@@ -553,6 +729,9 @@ class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecor
   }
 }
 
+/**
+ * Factory for multi-output async Taps with destination parameters.
+ */
 export function createAsyncMultiTap<
   Outs extends GripRecord,
   R = unknown,
@@ -561,7 +740,12 @@ export function createAsyncMultiTap<
   return new MultiOutputAsyncTap<Outs, R, StateRec>(cfg) as unknown as Tap;
 }
 
-// Home-only multi-tap variant
+/**
+ * Multi-output async Tap with home parameters only.
+ * 
+ * Same request for all destinations, no destination-specific parameters.
+ * Implements FunctionTapHandle for state management when configured.
+ */
 class MultiOutputHomeAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecord>
   extends BaseAsyncTap
   implements FunctionTapHandle<StateRec>
@@ -654,11 +838,13 @@ class MultiOutputHomeAsyncTap<Outs extends GripRecord, R, StateRec extends GripR
   }
 }
 
+/**
+ * Factory for multi-output async Taps with home parameters only.
+ */
 export function createAsyncHomeMultiTap<
   Outs extends GripRecord,
   R = unknown,
   StateRec extends GripRecord = {},
 >(cfg: AsyncHomeMultiTapConfig<Outs, R, StateRec>): Tap {
-  // Do not leak class type; return as Tap
   return new MultiOutputHomeAsyncTap<Outs, R, StateRec>(cfg) as unknown as Tap;
 }
