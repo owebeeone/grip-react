@@ -1,3 +1,31 @@
+/**
+ * GRIP Graph System - Core data flow graph implementation
+ * 
+ * Implements the fundamental graph structures that represent the data flow
+ * relationships in the GRIP system. The graph manages connections between
+ * producers (Taps), consumers (Drips), and contexts, enabling efficient
+ * data propagation and lifecycle management.
+ * 
+ * Key Components:
+ * - ProducerRecord: Manages a Tap's connections to multiple destinations
+ * - Destination: Represents a Tap's presence at a specific consumer context
+ * - DestinationParams: Unified interface for accessing destination and home parameters
+ * - GripGraph: The main graph container managing all nodes and relationships
+ * 
+ * Core Concepts:
+ * - Producer-Consumer Relationships: Taps provide data to consumer contexts
+ * - Destination Management: Each Tap can serve multiple consumer contexts
+ * - Parameter Resolution: Unified access to destination and home parameters
+ * - Lifecycle Management: Automatic cleanup when contexts are garbage collected
+ * - Value Propagation: Efficient publishing of values to subscribed destinations
+ * 
+ * Architecture:
+ * - Weak References: Used extensively for GC-aware lifecycle management
+ * - Subscription Management: Automatic parameter subscription and cleanup
+ * - Value Caching: Efficient value storage and retrieval
+ * - Graph Traversal: Support for complex context hierarchies
+ */
+
 import { Grip } from "./grip";
 import { GripContext } from "./context";
 import { Drip, Unsubscribe } from "./drip";
@@ -9,7 +37,19 @@ import { consola } from "consola";
 
 const logger = consola.withTag("core/graph.ts");
 
-// Comprehensive interface for accessing destination and home parameters
+/**
+ * Comprehensive interface for accessing destination and home parameters.
+ * 
+ * Provides a unified API for Taps to access both destination-specific parameters
+ * (from the consumer context) and home parameters (from the provider context).
+ * This abstraction simplifies parameter access and enables efficient caching.
+ * 
+ * Key Features:
+ * - Unified parameter access with automatic fallback (dest -> home)
+ * - Specific accessors for destination-only or home-only parameters
+ * - Efficient caching of parameter values
+ * - Type-safe parameter retrieval
+ */
 export interface DestinationParams {
   // Core context access
   readonly destContext: GripContext;
@@ -26,6 +66,17 @@ export interface DestinationParams {
   getAllHomeParams(): ReadonlyMap<Grip<any>, any>;
 }
 
+/**
+ * Manages a Tap's connections to multiple consumer contexts.
+ * 
+ * A ProducerRecord represents a Tap's presence in the graph and manages
+ * all its connections to consumer contexts (destinations). It handles:
+ * - Multiple destination contexts for the same Tap
+ * - Output Grip attribution and visibility
+ * - Destination lifecycle management
+ * - Value publishing to all relevant destinations
+ * - Handle destination cleanup when contexts are GC'd
+ */
 export class ProducerRecord {
   readonly tap: Tap;
   readonly tapFactory: TapFactory | undefined;
@@ -46,6 +97,12 @@ export class ProducerRecord {
   // param drips.
   readonly outputs = new Set<Grip<any>>();
 
+  /**
+   * Creates a new ProducerRecord for a Tap or TapFactory.
+   * 
+   * @param tap - The Tap or TapFactory to manage
+   * @param outputs - Optional set of output Grips this record should manage
+   */
   constructor(tap: Tap | TapFactory, outputs?: Iterable<Grip<any>>) {
     if (tap.kind === "TapFactory") {
       this.tap = tap.build();
@@ -57,6 +114,16 @@ export class ProducerRecord {
     if (outputs) for (const g of outputs) this.outputs.add(g as unknown as Grip<any>);
   }
 
+  /**
+   * Adds a Grip to a destination context for this producer.
+   * 
+   * Creates or updates a Destination for the specified context and adds
+   * the Grip to its set of provided outputs. Handles Tap lifecycle events
+   * and initial value production.
+   * 
+   * @param destNode - The destination context node
+   * @param grip - The Grip to add to this destination
+   */
   addDestinationGrip(destNode: GripContextNode, grip: Grip<any>): void {
     var existing = this.destinations.get(destNode);
     var added = false;
@@ -83,6 +150,14 @@ export class ProducerRecord {
     }
   }
 
+  /**
+   * Removes all connections to a destination context.
+   * 
+   * Cleans up the Destination for the specified context and triggers
+   * Tap detachment if this was the last destination.
+   * 
+   * @param destCtx - The destination context to remove
+   */
   removeDestinationForContext(destCtx: GripContextNode): void {
     const destination = this.destinations.get(destCtx);
     if (destination) {
@@ -101,11 +176,24 @@ export class ProducerRecord {
     }
   }
 
+  /**
+   * Returns all destinations for this producer.
+   * 
+   * @returns Map of destination context nodes to their Destination objects
+   */
   getDestinations(): Map<GripContextNode, Destination> {
     return this.destinations;
   }
 
-  // Add a destination for a grip.
+  /**
+   * Adds a destination for a specific Grip.
+   * 
+   * Creates a new Destination if one doesn't exist for the context,
+   * then adds the Grip to that destination.
+   * 
+   * @param destNode - The destination context node
+   * @param grip - The Grip to add
+   */
   addDestination(destNode: GripContextNode, grip: Grip<any>): void {
     if (process.env.NODE_ENV !== "production")
       logger.log(`[ProducerRecord] addDestination: Adding ${grip.key} to ${destNode.id}`);
@@ -119,7 +207,15 @@ export class ProducerRecord {
     existing.addGrip(grip);
   }
 
-  // Remove the context/grip pair from this producer.
+  /**
+   * Removes a specific Grip from a destination context.
+   * 
+   * Removes the Grip from the destination and cleans up the destination
+   * if it no longer provides any Grips.
+   * 
+   * @param destNode - The destination context node
+   * @param grip - The Grip to remove
+   */
   removeDestinationGripForContext(destNode: GripContextNode, grip: Grip<any>): void {
     if (process.env.NODE_ENV !== "production")
       logger.log(
@@ -135,7 +231,10 @@ export class ProducerRecord {
   }
 
   /**
-   * Get destination params for a specific destination context.
+   * Gets destination parameters for a specific destination context.
+   * 
+   * @param destContext - The destination context to get parameters for
+   * @returns DestinationParams interface for the context, or undefined if not found
    */
   getDestinationParams(destContext: GripContext): DestinationParams | undefined {
     // Find the destination for this context
@@ -148,12 +247,16 @@ export class ProducerRecord {
   }
 
   /**
-   * Publish values to the targets of this producer.
-   *
-   * Each destination is updated with the values that are present in the values map
-   * and only for the grips that the destination is subscribed to.
-   *
-   * If a destination context is gone, it is removed from the map.
+   * Publishes values to all destinations of this producer.
+   * 
+   * Iterates through all destinations and updates them with the provided values.
+   * Only updates destinations for Grips they are subscribed to and that are
+   * in the producer's output set. Automatically cleans up destinations whose
+   * contexts have been garbage collected.
+   * 
+   * @param values - Map of Grip values to publish
+   * @param updater - Function to call for each value update
+   * @returns Number of values successfully published
    */
   publish(
     values: Map<Grip<any>, any>,
@@ -187,8 +290,22 @@ export class ProducerRecord {
   }
 }
 
-// Destination caches the visibility state for a provider at a destination context
-// as well as manages any destination param drips that are needed for the provider.
+/**
+ * Represents a Tap's presence at a specific consumer context.
+ * 
+ * A Destination manages the relationship between a Tap and a specific
+ * consumer context. It handles:
+ * - The set of Grips provided to this context
+ * - Destination parameter subscriptions and caching
+ * - Value propagation to the consumer context
+ * - Lifecycle management and cleanup
+ * 
+ * Key Features:
+ * - Parameter caching for efficient access
+ * - Automatic subscription management
+ * - Grip set management
+ * - Unified parameter access interface
+ */
 export class Destination implements DestinationParams {
   private readonly destContextNode: GripContextNode;
   private readonly grips: Set<Grip<any>>;
@@ -200,12 +317,12 @@ export class Destination implements DestinationParams {
   private readonly destinationDripsSubs: Map<Grip<any>, Unsubscribe> = new Map();
 
   /**
-   * destContextNode is The destination context node that this Destination is for.
-   * tap is the tap that is providing the grips to this destination.
-   * producer is the producer record that is providing the grips to this destination.
-   * grips is the set of grips that are being provided to this destination. Note that
-   * each destination may only have a subset of the grips that the provider provides
-   * because some grips may be shadowed by a different tap.
+   * Creates a new Destination for a Tap at a specific consumer context.
+   * 
+   * @param destContextNode - The destination context node
+   * @param tap - The Tap providing data to this destination
+   * @param producer - The ProducerRecord managing this destination
+   * @param grips - Optional initial set of Grips provided to this destination
    */
   constructor(
     destContextNode: GripContextNode,
@@ -220,7 +337,10 @@ export class Destination implements DestinationParams {
   }
 
   /**
-   * Register for destination params.
+   * Registers subscriptions for destination parameters.
+   * 
+   * Sets up subscriptions to destination parameter Grips and triggers
+   * Tap production when parameter values change.
    */
   registerDestinationParamDrips() {
     if (!this.tap.destinationParamGrips) return;
@@ -245,12 +365,17 @@ export class Destination implements DestinationParams {
   }
 
   /**
-   * Unregister for destination params.
+   * Unregisters this destination from its producer.
    */
   unregisterDestination() {
     this.producer.removeDestinationForContext(this.destContextNode);
   }
 
+  /**
+   * Unsubscribes from all destination parameter Drips.
+   * 
+   * Cleans up all subscriptions and clears the parameter maps.
+   */
   unsubscribeAllDestinationParams(): void {
     for (const [grip, sub] of this.destinationDripsSubs) {
       sub();
@@ -260,7 +385,10 @@ export class Destination implements DestinationParams {
   }
 
   /**
-   * Returns the current value for a specific destination parameter grip at this destination.
+   * Returns the current value for a specific destination parameter Grip.
+   * 
+   * @param grip - The destination parameter Grip to get the value for
+   * @returns The current value or undefined if not set
    */
   getDestinationParamValue<T>(grip: Grip<T>): T | undefined {
     const d = this.destinationParamDrips.get(grip as unknown as Grip<any>);
@@ -268,7 +396,9 @@ export class Destination implements DestinationParams {
   }
 
   /**
-   * Returns a snapshot map of all destination parameter values for this destination.
+   * Returns a snapshot map of all destination parameter values.
+   * 
+   * @returns Map of all destination parameter Grips to their current values
    */
   getAllDestinationParamValues(): Map<Grip<any>, any> {
     const map = new Map<Grip<any>, any>();
@@ -279,7 +409,11 @@ export class Destination implements DestinationParams {
   }
 
   /**
-   * Add a destination grip for this destination.
+   * Adds a Grip to this destination.
+   * 
+   * Registers destination parameter subscriptions on the first Grip added.
+   * 
+   * @param g - The Grip to add to this destination
    */
   addGrip(g: Grip<any>) {
     if (this.grips.has(g)) return;
@@ -292,7 +426,9 @@ export class Destination implements DestinationParams {
   }
 
   /**
-   * Removes a destination grip for this destination.
+   * Removes a Grip from this destination.
+   * 
+   * @param g - The Grip to remove from this destination
    */
   removeGrip(g: Grip<any>) {
     try {
@@ -307,6 +443,12 @@ export class Destination implements DestinationParams {
     }
   }
 
+  /**
+   * Performs sanity checks on the destination state.
+   * 
+   * Validates that the destination has a consistent state, particularly
+   * that it doesn't have destination parameter Drips without output Grips.
+   */
   sanityCheck(): void {
     if (this.grips.size === 0) {
       if (this.destinationParamDrips.size > 0) {
@@ -316,23 +458,37 @@ export class Destination implements DestinationParams {
   }
 
   /**
-   * Get the grips being delivered for this destination.
+   * Gets the Grips being delivered for this destination.
+   * 
+   * @returns Read-only set of Grips provided to this destination
    */
   getGrips(): ReadonlySet<Grip<any>> {
     return this.grips;
   }
 
   /**
-   * Read-only access to destination parameter drips map for analysis.
+   * Gets read-only access to destination parameter Drips map for analysis.
+   * 
+   * @returns Read-only map of destination parameter Grips to their Drips
    */
   getDestinationParamDrips(): ReadonlyMap<Grip<any>, Drip<any>> {
     return this.destinationParamDrips;
   }
 
+  /**
+   * Gets the destination context, if it still exists.
+   * 
+   * @returns The destination context or undefined if it has been garbage collected
+   */
   getContext(): GripContext | undefined {
     return this.destContextNode.contextRef.deref();
   }
 
+  /**
+   * Gets the destination context node.
+   * 
+   * @returns The GripContextNode for this destination
+   */
   getContextNode() {
     return this.destContextNode;
   }
@@ -437,6 +593,26 @@ export class Destination implements DestinationParams {
   }
 }
 
+/**
+ * Represents a node in the GRIP context graph.
+ * 
+ * A GripContextNode is the internal representation of a GripContext in the graph.
+ * It manages the relationships between contexts, producers, and consumers,
+ * and provides the core data structures for the GRIP system.
+ * 
+ * Key Responsibilities:
+ * - Manages parent-child relationships in the context hierarchy
+ * - Tracks producers and consumers for each Grip
+ * - Maintains resolved provider mappings
+ * - Handles lifecycle management with weak references
+ * - Provides task scheduling capabilities
+ * 
+ * Architecture:
+ * - Weak References: Uses WeakRef for contexts to enable GC
+ * - Bidirectional Relationships: Maintains both parent and child references
+ * - Producer-Consumer Mapping: Maps Grips to their producers and consumers
+ * - Resolution Tracking: Caches which provider supplies each Grip
+ */
 export class GripContextNode implements GripContextNodeIf {
   readonly kind: "GripContextNode" = "GripContextNode";
   readonly grok: Grok;
@@ -457,24 +633,51 @@ export class GripContextNode implements GripContextNodeIf {
   readonly producerByTap = new Map<Tap | TapFactory, ProducerRecord>();
   private lastSeen = Date.now();
 
+  /**
+   * Creates a new GripContextNode for a GripContext.
+   * 
+   * @param grok - The GROK engine this node belongs to
+   * @param ctx - The GripContext this node represents
+   */
   constructor(grok: Grok, ctx: GripContext) {
     this.grok = grok;
     this.id = ctx.id;
     this.contextRef = new WeakRef(ctx);
   }
 
+  /**
+   * Gets the GROK engine this node belongs to.
+   * 
+   * @returns The GROK engine instance
+   */
   get_grok(): Grok {
     return this.grok;
   }
 
+  /**
+   * Submits a task to the GROK engine with priority.
+   * 
+   * @param callback - The task to execute
+   * @param priority - Priority level (lower = higher priority)
+   */
   submitTask(callback: () => void, priority: number) {
     this.grok.submitTask(callback, priority, this.handleHolder);
   }
 
+  /**
+   * Submits a weak task to the GROK engine.
+   * 
+   * @param taskQueueCallback - The task to execute
+   */
   submitWeakTask(taskQueueCallback: () => void) {
     this.grok.submitWeakTask(taskQueueCallback, this.handleHolder);
   }
 
+  /**
+   * Gets the GripContext this node represents, if it still exists.
+   * 
+   * @returns The GripContext or undefined if it has been garbage collected
+   */
   get_context(): GripContext | undefined {
     return this.contextRef.deref();
   }
