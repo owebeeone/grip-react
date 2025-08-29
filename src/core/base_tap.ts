@@ -3,7 +3,7 @@ import { Grip } from "./grip";
 import type { GripContext, GripContextLike } from "./context";
 import type { Grok } from "./grok";
 import type { Tap } from "./tap";
-import type { GripContextNode, Destination, ProducerRecord } from "./graph";
+import type { GripContextNode, Destination, ProducerRecord, DestinationParams } from "./graph";
 import { consola } from "consola";
 
 const logger = consola.withTag('core/base_tap.ts');
@@ -49,7 +49,7 @@ export abstract class BaseTap implements Tap {
   getHomeContext(): GripContext | undefined {
     return this.homeContext;
   }
-
+  
   getParamsContext(): GripContext | undefined {
     return this.paramsContext;
   }
@@ -213,6 +213,11 @@ export abstract class BaseTap implements Tap {
 
   // A grip on a destination parameter has changed.
   abstract produceOnDestParams?(destContext: GripContext | undefined, paramGrip: Grip<any>): void;
+  
+  // Protected helper to get destination params
+  protected getDestinationParams(destContext: GripContext): DestinationParams | undefined {
+    return this.producer?.getDestinationParams(destContext);
+  }
 }
 
 

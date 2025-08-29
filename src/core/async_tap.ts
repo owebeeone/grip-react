@@ -1,6 +1,7 @@
 import { BaseTap } from "./base_tap";
 import { Grip } from "./grip";
 import type { GripContext } from "./context";
+import type { DestinationParams } from "./graph";
 import type { AsyncCache } from "./async_cache";
 import { LruTtlCache } from "./async_cache";
 import type { Tap } from "./tap";
@@ -56,16 +57,18 @@ export abstract class BaseAsyncTap extends BaseTap {
     return s;
   }
 
-  protected abstract getRequestKey(dest: GripContext): string | undefined;
-  protected abstract buildRequest(dest: GripContext, signal: AbortSignal): Promise<unknown>;
-  protected abstract mapResultToUpdates(dest: GripContext, result: unknown): Map<Grip<any>, any>;
-  protected abstract getResetUpdates(dest: GripContext): Map<Grip<any>, any>;
+  protected abstract getRequestKey(params: DestinationParams): string | undefined;
+  protected abstract buildRequest(params: DestinationParams, signal: AbortSignal): Promise<unknown>;
+  protected abstract mapResultToUpdates(params: DestinationParams, result: unknown): Map<Grip<any>, any>;
+  protected abstract getResetUpdates(params: DestinationParams): Map<Grip<any>, any>;
 
   // Hooked by BaseTap when destination params change
   produceOnDestParams(destContext: GripContext | undefined): void {
     if (!destContext) return;
+    const params = this.getDestinationParams(destContext);
+    if (!params) return;
     // Only kickoff when requestKey is resolvable (dest params defined)
-    const key = this.getRequestKey(destContext);
+    const key = this.getRequestKey(params);
     if (!key) return;
     this.kickoff(destContext);
   }
@@ -129,13 +132,22 @@ export abstract class BaseAsyncTap extends BaseTap {
   private kickoff(dest: GripContext, forceRefetch?: boolean): void {
     const state = this.getDestState(dest);
     const prevKey = state.key;
-    const key = this.getRequestKey(dest);
+    
+    const params = this.getDestinationParams(dest);
+    if (!params) {
+      // Can't get params, abort
+      if (state.controller) state.controller.abort();
+      state.key = undefined;
+      return;
+    }
+    
+    const key = this.getRequestKey(params);
 
     // If params are insufficient now → abort any in-flight and clear outputs
     if (!key) {
       if (state.controller) state.controller.abort();
       state.key = undefined;
-      const resets = this.getResetUpdates(dest);
+      const resets = this.getResetUpdates(params);
       if (resets.size > 0) this.publish(resets, dest);
       return;
     }
@@ -152,9 +164,11 @@ export abstract class BaseAsyncTap extends BaseTap {
       for (const destNode of destinations) {
         const dctx = destNode.get_context();
         if (!dctx) continue;
-        const k2 = this.getRequestKey(dctx);
+        const dparams = this.getDestinationParams(dctx);
+        if (!dparams) continue;
+        const k2 = this.getRequestKey(dparams);
         if (k2 !== key) continue;
-        const updates = this.mapResultToUpdates(dctx, cached.value);
+        const updates = this.mapResultToUpdates(dparams, cached.value);
         this.publish(updates, dctx);
         // Mark each destination's state with the effective key to prevent repeated resets
         try { this.getDestState(dctx).key = key; } catch {}
@@ -177,16 +191,19 @@ export abstract class BaseAsyncTap extends BaseTap {
           for (const destNode of destinations) {
             const dctx = destNode.get_context();
             if (!dctx) continue;
-            const k2 = this.getRequestKey(dctx);
+            const dparams = this.getDestinationParams(dctx);
+            if (!dparams) continue;
+            const k2 = this.getRequestKey(dparams);
             if (k2 !== key) continue;
-            const updates = this.mapResultToUpdates(dctx, fromCache.value);
+            const updates = this.mapResultToUpdates(dparams, fromCache.value);
             this.publish(updates, dctx);
             try { this.getDestState(dctx).key = key; } catch {}
           }
         } else if (state.pendingRetryArmed && this.pending.get(key) === undefined) {
           // No cache was produced; if dest still targets this key, retry once
           state.pendingRetryArmed = false;
-          if (this.getRequestKey(dest) === key) {
+          const destParams = this.getDestinationParams(dest);
+          if (destParams && this.getRequestKey(destParams) === key) {
             this.kickoff(dest, true);
           }
         }
@@ -206,7 +223,7 @@ export abstract class BaseAsyncTap extends BaseTap {
       state.deadlineTimer = setTimeout(() => controller.abort(), this.asyncOpts.deadlineMs);
       this.allTimers.add(state.deadlineTimer);
     }
-    const promise = this.buildRequest(dest, controller.signal)
+    const promise = this.buildRequest(params, controller.signal)
       .then(result => {
         if (controller.signal.aborted) return;
         // Latest-only guard
@@ -225,10 +242,12 @@ export abstract class BaseAsyncTap extends BaseTap {
             if (process.env.NODE_ENV !== 'production') logger.log(`[AsyncTap]   - Skipping destination: context is gone`);
             continue;
           }
-          const k2 = this.getRequestKey(dctx);
+          const dparams = this.getDestinationParams(dctx);
+          if (!dparams) continue;
+          const k2 = this.getRequestKey(dparams);
           if (process.env.NODE_ENV !== 'production') logger.log(`[AsyncTap]   - Destination ${dctx.id} has key=${k2}, looking for key=${key}`);
           if (k2 !== key) continue;
-          const updates = this.mapResultToUpdates(dctx, result);
+          const updates = this.mapResultToUpdates(dparams, result);
           this.publish(updates, dctx);
           try { this.getDestState(dctx).key = key; } catch {}
         }
@@ -247,28 +266,29 @@ export abstract class BaseAsyncTap extends BaseTap {
 export interface AsyncValueTapConfig<T> extends BaseAsyncTapOptions {
   provides: Grip<T>;
   destinationParamGrips?: readonly Grip<any>[];
-  requestKeyOf: (dest: GripContext) => string | undefined;
-  fetcher: (dest: GripContext, signal: AbortSignal) => Promise<T>;
+  homeParamGrips?: readonly Grip<any>[];
+  requestKeyOf: (params: DestinationParams) => string | undefined;
+  fetcher: (params: DestinationParams, signal: AbortSignal) => Promise<T>;
 }
 
 class SingleOutputAsyncTap<T> extends BaseAsyncTap {
   private readonly out: Grip<T>;
-  private readonly keyOf: (dest: GripContext) => string | undefined;
-  private readonly fetcher: (dest: GripContext, signal: AbortSignal) => Promise<T>;
+  private readonly keyOf: (params: DestinationParams) => string | undefined;
+  private readonly fetcher: (params: DestinationParams, signal: AbortSignal) => Promise<T>;
   constructor(cfg: AsyncValueTapConfig<T>) {
-    super({ provides: [cfg.provides], destinationParamGrips: cfg.destinationParamGrips, async: cfg });
+    super({ provides: [cfg.provides], destinationParamGrips: cfg.destinationParamGrips, homeParamGrips: cfg.homeParamGrips, async: cfg });
     this.out = cfg.provides;
     this.keyOf = cfg.requestKeyOf;
     this.fetcher = cfg.fetcher;
   }
-  protected getRequestKey(dest: GripContext): string | undefined { return this.keyOf(dest); }
-  protected buildRequest(dest: GripContext, signal: AbortSignal): Promise<unknown> { return this.fetcher(dest, signal); }
-  protected mapResultToUpdates(_dest: GripContext, result: unknown): Map<Grip<any>, any> {
+  protected getRequestKey(params: DestinationParams): string | undefined { return this.keyOf(params); }
+  protected buildRequest(params: DestinationParams, signal: AbortSignal): Promise<unknown> { return this.fetcher(params, signal); }
+  protected mapResultToUpdates(_params: DestinationParams, result: unknown): Map<Grip<any>, any> {
     const updates = new Map<Grip<any>, any>();
     updates.set(this.out as unknown as Grip<any>, result as T);
     return updates;
   }
-  protected getResetUpdates(_dest: GripContext): Map<Grip<any>, any> {
+  protected getResetUpdates(_params: DestinationParams): Map<Grip<any>, any> {
     const updates = new Map<Grip<any>, any>();
     updates.set(this.out as unknown as Grip<any>, undefined as unknown as T);
     return updates;
@@ -288,16 +308,16 @@ export interface AsyncMultiTapConfig<Outs extends GripRecord, R = unknown, State
   handleGrip?: Grip<FunctionTapHandle<StateRec>>;
   initialState?: ReadonlyArray<[Grip<any>, any]> | ReadonlyMap<Grip<any>, any>;
   requestKeyOf: (
-    dest: GripContext,
+    params: DestinationParams,
     getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
   ) => string | undefined;
   fetcher: (
-    dest: GripContext,
+    params: DestinationParams,
     signal: AbortSignal,
     getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
   ) => Promise<R>;
   mapResult: (
-    dest: GripContext,
+    params: DestinationParams,
     result: R,
     getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
   ) => ReadonlyMap<Values<Outs>, GripValue<Values<Outs>>>;
@@ -307,16 +327,16 @@ class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecor
   extends BaseAsyncTap implements FunctionTapHandle<StateRec> {
   private readonly outs: ReadonlyArray<Values<Outs>>;
   private readonly keyOf: (
-    dest: GripContext,
+    params: DestinationParams,
     getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
   ) => string | undefined;
   private readonly fetcher: (
-    dest: GripContext,
+    params: DestinationParams,
     signal: AbortSignal,
     getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
   ) => Promise<R>;
   private readonly mapper: (
-    dest: GripContext,
+    params: DestinationParams,
     result: R,
     getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
   ) => ReadonlyMap<Values<Outs>, GripValue<Values<Outs>>>;
@@ -335,10 +355,10 @@ class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecor
       for (const [g, v] of it) this.state.set(g, v);
     }
   }
-  protected getRequestKey(dest: GripContext): string | undefined { return this.keyOf(dest, this.getState.bind(this) as any); }
-  protected buildRequest(dest: GripContext, signal: AbortSignal): Promise<unknown> { return this.fetcher(dest, signal, this.getState.bind(this) as any); }
-  protected mapResultToUpdates(dest: GripContext, result: unknown): Map<Grip<any>, any> {
-    const typed = this.mapper(dest, result as R, this.getState.bind(this) as any);
+  protected getRequestKey(params: DestinationParams): string | undefined { return this.keyOf(params, this.getState.bind(this) as any); }
+  protected buildRequest(params: DestinationParams, signal: AbortSignal): Promise<unknown> { return this.fetcher(params, signal, this.getState.bind(this) as any); }
+  protected mapResultToUpdates(params: DestinationParams, result: unknown): Map<Grip<any>, any> {
+    const typed = this.mapper(params, result as R, this.getState.bind(this) as any);
     const updates = new Map<Grip<any>, any>();
     for (const [g, v] of typed as ReadonlyMap<any, any>) {
       updates.set(g as unknown as Grip<any>, v);
@@ -348,7 +368,7 @@ class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecor
     }
     return updates;
   }
-  protected getResetUpdates(_dest: GripContext): Map<Grip<any>, any> {
+  protected getResetUpdates(_params: DestinationParams): Map<Grip<any>, any> {
     const updates = new Map<Grip<any>, any>();
     for (const g of this.outs) {
       updates.set(g as unknown as Grip<any>, undefined);

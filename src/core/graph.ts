@@ -9,6 +9,21 @@ import { consola } from "consola";
 
 const logger = consola.withTag('core/graph.ts');
 
+// Comprehensive interface for accessing destination and home parameters
+export interface DestinationParams {
+  // Core context access
+  readonly destContext: GripContext;
+  
+  // Unified parameter access (checks dest first, then home)
+  get<T>(grip: Grip<T>): T | undefined;
+  getAll(): ReadonlyMap<Grip<any>, any>;
+  has(grip: Grip<any>): boolean;
+  
+  // Specific accessors when needed
+  getDestParam<T>(grip: Grip<T>): T | undefined;
+  getHomeParam<T>(grip: Grip<T>): T | undefined;
+}
+
 export class ProducerRecord {
   readonly tap: Tap;
   readonly tapFactory: TapFactory | undefined;
@@ -106,6 +121,19 @@ export class ProducerRecord {
         this.removeDestinationForContext(destNode);
       }
     }
+  }
+
+  /**
+   * Get destination params for a specific destination context.
+   */
+  getDestinationParams(destContext: GripContext): DestinationParams | undefined {
+    // Find the destination for this context
+    for (const [destNode, destination] of this.destinations) {
+      if (destNode.get_context() === destContext) {
+        return destination.getParams();
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -288,6 +316,95 @@ export class Destination {
   
   getContextNode() {
     return this.destContextNode
+  }
+
+  /**
+   * Get a comprehensive params object for this destination.
+   */
+  getParams(): DestinationParams {
+    const destCtx = this.destContextNode.get_context();
+    if (!destCtx) throw new Error("Destination context is gone");
+    return new DestinationParamsImpl(
+      destCtx,
+      this.destinationParamDrips,
+      this.producer,
+      this.tap
+    );
+  }
+}
+
+// Internal implementation of DestinationParams
+class DestinationParamsImpl implements DestinationParams {
+  constructor(
+    readonly destContext: GripContext,
+    private destDrips: Map<Grip<any>, Drip<any>>,
+    private producer: ProducerRecord,
+    private tap: Tap
+  ) {}
+  
+  // Combined getter - checks destination params first, then home params
+  get<T>(grip: Grip<T>): T | undefined {
+    // First check destination params (higher priority)
+    const destValue = this.getDestParam(grip);
+    if (destValue !== undefined) return destValue;
+    
+    // Fall back to home params
+    return this.getHomeParam(grip);
+  }
+  
+  // Combined getAll - merges both maps (dest params override home params)
+  getAll(): ReadonlyMap<Grip<any>, any> {
+    const map = new Map();
+    
+    // Start with home params
+    const homeContext = this.tap.getHomeContext?.();
+    if (homeContext && this.tap.homeParamGrips) {
+      const paramContext = this.tap.getParamsContext?.() || homeContext;
+      for (const grip of this.tap.homeParamGrips) {
+        const drip = paramContext.getOrCreateConsumer(grip);
+        const value = drip.get();
+        if (value !== undefined) {
+          map.set(grip, value);
+        }
+      }
+    }
+    
+    // Override with dest params (higher priority)
+    for (const [g, d] of this.destDrips) {
+      const value = d.get();
+      if (value !== undefined) {
+        map.set(g, value);
+      }
+    }
+    
+    return map;
+  }
+  
+  // Combined has - checks both
+  has(grip: Grip<any>): boolean {
+    return this.hasDestParam(grip) || this.hasHomeParam(grip);
+  }
+  
+  getDestParam<T>(grip: Grip<T>): T | undefined {
+    const d = this.destDrips.get(grip as unknown as Grip<any>);
+    return d?.get() as T | undefined;
+  }
+  
+  getHomeParam<T>(grip: Grip<T>): T | undefined {
+    const homeContext = this.tap.getHomeContext?.();
+    if (!homeContext) return undefined;
+    // Get the drip from the tap's param context
+    const paramContext = this.tap.getParamsContext?.() || homeContext;
+    const drip = paramContext.getOrCreateConsumer(grip);
+    return drip.get();
+  }
+  
+  private hasDestParam(grip: Grip<any>): boolean {
+    return this.destDrips.has(grip);
+  }
+  
+  private hasHomeParam(grip: Grip<any>): boolean {
+    return this.tap.homeParamGrips?.includes(grip) ?? false;
   }
 }
 
