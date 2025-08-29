@@ -175,26 +175,13 @@ export class InvertedIndex {
  * A stateless utility to handle attribution logic.
  */
 class AttributionUtility {
-    private factoryCache = new WeakMap<TapFactory, Tap>();
-
-    private getTap(tapOrFactory: Tap | TapFactory): Tap {
-        if (typeof (tapOrFactory as any)?.build === 'function') {
-            const factory = tapOrFactory as TapFactory;
-            if (!this.factoryCache.has(factory)) {
-                this.factoryCache.set(factory, factory.build());
-            }
-            return this.factoryCache.get(factory)!;
-        }
-        return tapOrFactory as Tap;
-    }
 
     public attribute(matches: MatchedTap[]): Map<Tap | TapFactory, TapAttribution> {
         const attributed = new Map<Tap | TapFactory, TapAttribution>();
         const partitioner = new DisjointSetPartitioner<MatchedTap, Grip<any>>();
 
         for (const match of matches) {
-            const tap = this.getTap(match.tap);
-            partitioner.add(match, Array.from(tap.provides));
+            partitioner.add(match, Array.from(match.tap.provides));
         }
 
         for (const partition of partitioner.getPartitions()) {
@@ -204,8 +191,7 @@ class AttributionUtility {
             const seenOutputs = new Set<Grip<any>>();
 
             for (const matchedTap of sortedTaps) {
-                const tap = this.getTap(matchedTap.tap);
-                const novelOutputs = Array.from(tap.provides).filter(g => !seenOutputs.has(g));
+                const novelOutputs = Array.from(matchedTap.tap.provides).filter(g => !seenOutputs.has(g));
 
                 if (novelOutputs.length > 0) {
                     const tapAttribution: TapAttribution = {

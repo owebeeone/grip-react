@@ -396,10 +396,6 @@ export class GripContextNode implements GripContextNodeIf {
       if (producerRecord.tapFactory) {
         this.producerByTap.delete(producerRecord.tapFactory);
       }
-      // Also delete the tap instance if we were called with the factory
-      if (tap === producerRecord.tapFactory && producerRecord.tap) {
-        this.producerByTap.delete(producerRecord.tap);
-      }
       
       producerRecord.tap.onDetach?.();
     }
