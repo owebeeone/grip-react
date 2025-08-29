@@ -1,3 +1,20 @@
+/**
+ * GRIP GROK Engine - Central orchestrator for reactive dataflow
+ *
+ * GROK (Generalized Retrieval Orchestration Kernel) is the central coordinator
+ * of the entire GRIP system. It manages the data flow graph, resolves queries,
+ * connects producers (Taps) to consumers (Drips), and handles the lifecycle
+ * of all system components.
+ *
+ * Key responsibilities:
+ * - Manages the context DAG and graph operations
+ * - Resolves queries to find the best Tap for each Grip request
+ * - Orchestrates connections between Taps and Drips
+ * - Handles Tap registration and lifecycle management
+ * - Provides task scheduling and execution
+ * - Manages the query evaluation system for declarative Tap selection
+ */
+
 import { Grip } from "./grip";
 import { GripContext, GripContextLike } from "./context";
 import { Drip } from "./drip";
@@ -9,6 +26,9 @@ import { SimpleResolver, IGripResolver } from "./tap_resolver";
 import { EvaluationDelta, QueryBinding } from "./query_evaluator";
 import { MatchingContext } from "./matcher";
 
+/**
+ * Utility function to find the intersection of a Set and an Iterable.
+ */
 function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
   const result = new Set<T>();
   for (const item of iterable) {
@@ -19,6 +39,9 @@ function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
   return result;
 }
 
+/**
+ * Utility function to find the difference between two Sets.
+ */
 function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
   const result = new Set<T>();
   for (const item of setA) {
@@ -30,24 +53,52 @@ function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
 }
 
 /**
- * The Grok engine.
+ * GROK (Generalized Retrieval Orchestration Kernel) is the central engine
+ * that orchestrates the entire GRIP reactive dataflow system.
  *
- * This is the main class for the the Grip system's engine.
+ * GROK manages:
+ * - The context DAG (Directed Acyclic Graph) representing the hierarchy
+ * - Tap registration and lifecycle management
+ * - Query resolution to find the best data providers
+ * - Connection management between producers (Taps) and consumers (Drips)
+ * - Task scheduling and execution for asynchronous operations
+ * - The query evaluation system for declarative Tap selection
  *
- * All related objects, Drips, Contexts, Taps, etc. have access to one Grok instance.
- *
+ * All related objects (Drips, Contexts, Taps, etc.) have access to one
+ * GROK instance, which serves as the single source of truth for the
+ * data flow graph and orchestration logic.
  */
 export class Grok {
+  /** The internal graph representation managing contexts and their relationships */
   private graph = new GrokGraph(this);
 
+  /** Task queue for scheduling and executing asynchronous operations */
   private taskQueue = new TaskQueue();
 
+  /** Root context with no parents, serves as the top-level scope */
   readonly rootContext: GripContext;
+
+  /** Main home context for Tap registration, inherits from root */
   readonly mainHomeContext: GripContext;
+
+  /** Main presentation context for data consumption, inherits from main home */
   readonly mainPresentationContext: GripContext;
+
+  /** Main matching context combining home and presentation contexts */
   readonly mainContext: MatchingContext;
+
+  /** Resolver for finding the best Tap for each Grip request */
   readonly resolver: IGripResolver = new SimpleResolver(this);
 
+  /**
+   * Creates a new GROK engine instance.
+   *
+   * Initializes the core context hierarchy:
+   * - rootContext: Top-level context with no parents
+   * - mainHomeContext: Default context for Tap registration
+   * - mainPresentationContext: Default context for data consumption
+   * - mainContext: Combined context for matching operations
+   */
   constructor() {
     this.rootContext = new GripContext(this, "root");
     this.mainHomeContext = new GripContext(this, "main-home").addParent(this.rootContext, 0);
@@ -58,32 +109,72 @@ export class Grok {
     this.mainContext = new MatchingContext(this.mainHomeContext, this.mainPresentationContext);
   }
 
+  /**
+   * Checks if adding a new node would create a cycle in the context DAG.
+   *
+   * @param newNode - The node to check for cycle creation
+   * @returns True if adding the node would create a cycle
+   */
   hasCycle(newNode: GripContextNode): boolean {
     return this.graph.hasCycle(newNode);
   }
 
+  /**
+   * Submits a task to the internal task queue for execution.
+   *
+   * @param callback - The function to execute
+   * @param priority - Priority level (lower numbers = higher priority)
+   * @param handleHolder - Container for the task handle
+   */
   submitTask(callback: () => void, priority: number, handleHolder: TaskHandleHolder) {
     this.taskQueue.submit(callback, priority, handleHolder);
   }
 
+  /**
+   * Submits a weak task that doesn't prevent garbage collection.
+   *
+   * @param taskQueueCallback - The function to execute
+   * @param handleHolder - Container for the task handle
+   */
   submitWeakTask(taskQueueCallback: () => void, handleHolder: TaskHandleHolder) {
     this.taskQueue.submitWeak(taskQueueCallback, 0, handleHolder);
   }
 
+  /**
+   * Returns the internal task queue for direct access.
+   *
+   * @returns The task queue instance
+   */
   getTaskQueue(): TaskQueue {
     return this.taskQueue;
   }
 
-  // Drain the internal task queue (useful for tests to assert post-update state)
+  /**
+   * Drains the internal task queue, executing all pending tasks.
+   * Useful for tests to assert post-update state.
+   */
   flush(): void {
     this.taskQueue.flush();
   }
 
+  /**
+   * Ensures a context node exists in the graph, creating it if necessary.
+   *
+   * @param ctx - The context to ensure a node for
+   * @returns The graph node for the context
+   */
   ensureNode(ctx: GripContext): GripContextNode {
     return this.graph.ensureNode(ctx);
   }
 
-  // Create a new context optionally parented to a given context (defaults to main)
+  /**
+   * Creates a new context optionally parented to a given context.
+   *
+   * @param parent - Optional parent context (defaults to main context)
+   * @param priority - Priority for inheritance (default: 0)
+   * @param id - Optional unique identifier
+   * @returns The newly created context
+   */
   createContext(parent?: GripContext, priority = 0, id?: string): GripContext {
     const ctx = new GripContext(this, id);
     if (parent ?? this.mainContext) ctx.addParent(parent ?? this.mainContext, priority);
@@ -91,13 +182,27 @@ export class Grok {
     return ctx;
   }
 
-  // Dispose a context: clears caches keyed by this ctx and lets the graph GC remove the node
+  /**
+   * Disposes a context, clearing caches and allowing garbage collection.
+   *
+   * @param ctx - The context to dispose
+   */
   disposeContext(ctx: GripContext): void {
     // Optionally: detach from parents to break strong references in contexts
     // There is no public API on GripContext to remove parents; we rely on graph WeakRef GC.
   }
 
-  // Create a home context (optionally parented) and a presentation child context, returning a dual container
+  /**
+   * Creates a dual context container with separate home and presentation contexts.
+   *
+   * This is useful for transform Taps that read from one context hierarchy
+   * and write to another, enabling clean separation of concerns.
+   *
+   * @param homeParent - The parent context for the home context
+   * @param opts - Options for the dual context
+   * @param opts.destPriority - Priority for the destination context inheritance
+   * @returns A dual context container
+   */
   createDualContext(
     homeParent: GripContext,
     opts?: { destPriority?: number },
@@ -110,21 +215,51 @@ export class Grok {
     return new DualContextContainer(home, dest);
   }
 
+  /**
+   * Registers a Tap at a specific context.
+   *
+   * The Tap will be available to the specified context and all its descendants,
+   * unless overshadowed by a closer Tap in a descendant context.
+   *
+   * @param ctx - The context to register the Tap at
+   * @param tap - The Tap or TapFactory to register
+   */
   registerTapAt(ctx: GripContextLike, tap: Tap | TapFactory): void {
     const homeCtx = ctx.getGripHomeContext();
     // Delegate to resolver for attach and re-resolution
     this.resolver.addProducer(homeCtx, tap);
   }
 
+  /**
+   * Applies a producer delta from query evaluation results.
+   *
+   * This method is used by the query evaluation system to apply changes
+   * to the producer graph based on declarative query results.
+   *
+   * @param context - The context to apply the delta to
+   * @param delta - The evaluation delta containing added/removed producers
+   */
   applyProducerDelta(context: GripContext | GripContextNode, delta: EvaluationDelta): void {
     this.resolver.applyProducerDelta(context, delta);
   }
 
-  // Convenience registration at main context
+  /**
+   * Convenience method to register a Tap at the main context.
+   *
+   * @param tap - The Tap or TapFactory to register
+   */
   registerTap(tap: Tap | TapFactory): void {
     this.registerTapAt(this.mainContext, tap);
   }
 
+  /**
+   * Unregisters a Tap from the system.
+   *
+   * This will trigger re-resolution of any consumers that were using
+   * this Tap, potentially finding alternative providers.
+   *
+   * @param tap - The Tap to unregister
+   */
   unregisterTap(tap: Tap): void {
     const homeCtx = tap.getHomeContext();
     if (homeCtx) {
@@ -133,22 +268,17 @@ export class Grok {
     }
   }
 
-  // // indexTapDestination removed; use ProducerRecord destinations instead
-
-  // // Broadcast new values produced by a tap to all destination contexts currently mapped under a home context
-  // publish(home: GripContext, tap: Tap, updates: Map<Grip<any>, any>): number {
-  //   const homeNode = this.graph.getNode(home);
-  //   if (!homeNode) return 0;
-  //   const rec = homeNode.producerByTap.get(tap);
-  //   if (!rec) return 0;
-  //   return rec.publish(updates, (destCtx: GripContext, grip: Grip<any>, value: any) => {
-  //     this.graph.notifyConsumers(destCtx, grip as any, value);
-  //   });
-  // }
-
-  // publishFrom removed: callers must know the home (producer) context
-
-  // Central query API: component asks for a Grip from a Context => gets a Drip<T>
+  /**
+   * Central query API: resolves a Grip request to a Drip.
+   *
+   * This is the primary method used by components to request data.
+   * The engine will find the best Tap to provide the requested Grip
+   * based on context hierarchy and resolution rules.
+   *
+   * @param grip - The Grip being requested
+   * @param consumerCtx - The context making the request
+   * @returns A Drip that provides the requested data
+   */
   query<T>(grip: Grip<T>, consumerCtx: GripContextLike): Drip<T> {
     const ctx = consumerCtx.getGripConsumerContext();
     const ctxNode = ctx.getGripConsumerContext()._getContextNode();
@@ -172,129 +302,47 @@ export class Grok {
     return drip;
   }
 
+  /**
+   * Adds a query binding to the main matching context.
+   *
+   * Query bindings define declarative rules for Tap selection based on
+   * context parameters and conditions.
+   *
+   * @param binding - The query binding to add
+   */
   addBinding(binding: QueryBinding): void {
     this.mainContext.addBinding(binding);
   }
 
+  /**
+   * Removes a query binding from the main matching context.
+   *
+   * @param bindingId - The ID of the binding to remove
+   */
   removeBinding(bindingId: string): void {
     this.mainContext.removeBinding(bindingId);
   }
 
-  // resolveConsumer(dest: GripContext, source: GripContext, grip: Grip<any>): void {
-  //   const roots = Array<GripContext>();
-  //   const visited = new Set<GripContext>();
-  //   // See if we can resolve the consumer by looking at parents.
-  //   if(this.resolveConsumerStage1(dest, source, grip, visited, roots)) return;
-
-  //   // If we didn't find a producer in the current context, then we need to
-  //   // check the roots encountered as we treat roots as a last resort.
-  //   var dummyRoots = Array<GripContext>();
-  //   for (const root of roots) {
-  //     if (this.resolveConsumerStage1(dest, root, grip, visited, dummyRoots)) {
-  //       // We found a producer in a root context. We're done.
-  //       return;
-  //     }
-  //   }
-  //   // Didn't find a producer then we need to make sure this is a detached
-  //   // drip.
-  //   this.unresolveConsumer(dest, grip);
-  // }
-
-  // unresolveConsumer(dest: GripContext | GripContextNode, grip: Grip<any>): void {
-  //   const destNode = dest instanceof GripContextNode ? dest : this.ensureNode(dest);
-  //   const resolvedProviders = destNode.getResolvedProviders();
-  //   const providerNode = resolvedProviders.get(grip);
-  //   if (providerNode) {
-  //     providerNode.removeDestinationForContext(grip, destNode);
-  //     resolvedProviders.delete(grip);
-  //   }
-  // }
-
-  // resolveConsumerStage1(
-  //   dest: GripContext,
-  //   source: GripContext,
-  //   grip: Grip<any>,
-  //   visited: Set<GripContext>,
-  //   roots: GripContext[]): boolean {
-  //   // Check to see if the current context has a tap that provides this grip.
-  //   var sourceNode = this.ensureNode(source);
-  //   var producer = sourceNode.get_producers().get(grip);
-
-  //   if (producer) {
-  //     // We have a tap that provides this grip.
-  //     // Link the producer to the original destination context for this grip
-  //     const destNode = this.ensureNode(dest);
-  //     producer.addDestinationGrip(destNode, grip);
-  //     // Record the resolved provider for cleanup from the destination side
-  //     destNode.setResolvedProvider(grip, sourceNode);
-  //     return true;
-  //   }
-
-  //   // Check all parents all the way up to the root.
-  //   for (const parent of source.getParents()) {
-  //     const parentCtx = parent.ctx;
-  //     if (parentCtx.isRoot()) {
-  //       roots.push(parentCtx);
-  //       continue;
-  //     }
-  //     if (visited.has(parentCtx)) continue;
-  //     visited.add(parentCtx);
-  //     if (this.resolveConsumerStage1(dest, parentCtx, grip, visited, roots)) return true;
-  //   }
-
-  //   return false;
-  // }
-
-  // // This is where we resolve a set of produced Grips to potential consumers.
-  // resolveProducer(ctx: GripContext, current: GripContext | undefined, grips: Set<Grip<any>>) {
-  //   var available_grips = grips;
-
-  //   // Check to see local consumers first.
-  //   if (current) {
-  //     const node = this.ensureNode(current);
-  //     const producers = node.get_producers();
-
-  //     // If there are producers that can provide the grips, then these shadow our
-  //     // grips so we remove them from the available grips. If we're completely
-  //     // overridden, then we return. There may have been other contexts that where
-  //     // we successfully resolved or there may be more grips being registered later
-  //     // where the source context can provide data for.
-  //     if (producers.size > 0) {
-  //       const common = intersection(available_grips, producers.keys());
-  //       if (common.size > 0) {
-  //         available_grips = difference(available_grips, common);
-  //         if (available_grips.size === 0) {
-  //           // The available grips are completely overridden by other producers.
-  //           return;
-  //         }
-  //       }
-  //     }
-  //   } else {
-  //     // On the first call in the recursion we set the current context to be undefined.
-  //     // as we don't want to shadow ourselves. In this case we do want to prodice for
-  //     // local consumers.
-  //     current = ctx;
-  //   }
-
-  //   // This is where we check for consumers in the "current" destination context.
-  //   const node = this.ensureNode(current);
-  //   // Now scan the children to find any consumers that can be provided by the producers context.
-  //   const consumers = node.get_consumers();
-  //   for (const [grip, drip] of consumers) {
-  //     if (available_grips.has(grip)) {
-  //       // OK - we have a consumer that we want to provide.
-  //       // Now we need to check to see if this context/grip pair is already
-  //       // has a different visible producer by doing a resolveConsumer.
-  //       this.resolveConsumer(current, current, grip);
-  //     }
-  //   }
-  // }
-
-  // Expose read-only snapshot of the graph for debugging/inspection
+  /**
+   * Returns a read-only snapshot of the current graph state.
+   *
+   * This is useful for debugging, inspection, and visualization
+   * of the current data flow graph.
+   *
+   * @returns A map of context IDs to their graph nodes
+   */
   getGraph(): ReadonlyMap<string, GripContextNode> {
     return this.graph.snapshot();
   }
 
+  /**
+   * Returns a sanity check of the graph state for debugging.
+   *
+   * This method helps identify potential issues with the graph,
+   * such as missing nodes or nodes that should have been garbage collected.
+   *
+   * @returns An object containing graph state and potential issues
+   */
   getGraphSanityCheck(): {
     nodes: ReadonlyMap<string, GripContextNode>;
     missingNodes: ReadonlySet<GripContextNode>;

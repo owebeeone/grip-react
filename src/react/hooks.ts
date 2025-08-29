@@ -61,7 +61,6 @@ export function useGrip<T>(grip: Grip<T>, ctx?: GripContext | GripContextLike): 
   return useSyncExternalStore(subscribe, get, get);
 }
 
-
 export function useTap(
   factory: () => Tap,
   opts?: { ctx?: GripContext; deps?: React.DependencyList }, // deps to control re-creation
