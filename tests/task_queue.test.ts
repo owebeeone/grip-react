@@ -29,7 +29,9 @@ describe("TaskQueue - ordering and basic behavior", () => {
   it("auto-flush runs tasks asynchronously by default", async () => {
     const q = new TaskQueue();
     let ran = false;
-    q.submit(() => { ran = true; }, 0);
+    q.submit(() => {
+      ran = true;
+    }, 0);
 
     expect(ran).toBe(false);
     await new Promise((r) => setTimeout(r, 0));
@@ -66,11 +68,15 @@ describe("TaskQueue - ordering and basic behavior", () => {
     let ran = false;
 
     const holder = new TaskHandleHolder();
-    q.submit(() => {
-      // At this point, the task is running; cancelling should fail and not change state
-      cancelResult = handle.cancel();
-      ran = true;
-    }, 0, holder);
+    q.submit(
+      () => {
+        // At this point, the task is running; cancelling should fail and not change state
+        cancelResult = handle.cancel();
+        ran = true;
+      },
+      0,
+      holder,
+    );
     handle = holder.getHandles()[0] as TaskHandle;
 
     q.flush();
@@ -105,14 +111,14 @@ describe("TaskQueue - ordering and basic behavior", () => {
       q.submit(() => calls.push(i), 0, holder);
     }
     expect(holder.size).toBe(5);
-    holder.getHandles().forEach(h => expect(h.isPending()).toBe(true));
+    holder.getHandles().forEach((h) => expect(h.isPending()).toBe(true));
 
     // Snapshot handles for post-cancel state checks
-    const handles = holder.getHandles().map(h => h as TaskHandle);
+    const handles = holder.getHandles().map((h) => h as TaskHandle);
 
     holder.cancelAll();
     expect(holder.size).toBe(0);
-    handles.forEach(h => expect(h.isCancelled()).toBe(true));
+    handles.forEach((h) => expect(h.isCancelled()).toBe(true));
 
     // Flushing should run nothing
     q.flush();
@@ -165,10 +171,18 @@ describe("TaskQueue - Monte Carlo randomized scenario", () => {
           q.submitWeak(cb, priority, holder);
         }
         handle = holder.getHandles()[0] as TaskHandle;
-        models.push({ id, priority, submitSeq: seq, handle, cancelledBeforeRun: false, willSelfCancel, ran: false });
+        models.push({
+          id,
+          priority,
+          submitSeq: seq,
+          handle,
+          cancelledBeforeRun: false,
+          willSelfCancel,
+          ran: false,
+        });
       } else {
         // attempt to cancel a random pending task
-        const pending = models.filter(m => m.handle.isPending());
+        const pending = models.filter((m) => m.handle.isPending());
         if (pending.length > 0) {
           const pick = pending[random(pending.length)];
           const res = pick.handle.cancel();
@@ -183,9 +197,9 @@ describe("TaskQueue - Monte Carlo randomized scenario", () => {
 
     // Determine expected executed models (not cancelled before run)
     const expectedExecuted = models
-      .filter(m => !m.cancelledBeforeRun)
-      .sort((a, b) => (a.priority - b.priority) || (a.submitSeq - b.submitSeq))
-      .map(m => m.id);
+      .filter((m) => !m.cancelledBeforeRun)
+      .sort((a, b) => a.priority - b.priority || a.submitSeq - b.submitSeq)
+      .map((m) => m.id);
 
     expect(executed).toEqual(expectedExecuted);
 
@@ -205,5 +219,3 @@ describe("TaskQueue - Monte Carlo randomized scenario", () => {
     }
   });
 });
-
-

@@ -7,18 +7,18 @@ import { GripContextNodeIf } from "./context_node";
 import { TaskHandleHolder } from "./task_queue";
 import { consola } from "consola";
 
-const logger = consola.withTag('core/graph.ts');
+const logger = consola.withTag("core/graph.ts");
 
 // Comprehensive interface for accessing destination and home parameters
 export interface DestinationParams {
   // Core context access
   readonly destContext: GripContext;
-  
+
   // Unified parameter access (checks dest first, then home)
   get<T>(grip: Grip<T>): T | undefined;
   getAll(): ReadonlyMap<Grip<any>, any>;
   has(grip: Grip<any>): boolean;
-  
+
   // Specific accessors when needed
   getDestParam<T>(grip: Grip<T>): T | undefined;
   getAllDestParams(): ReadonlyMap<Grip<any>, any>;
@@ -42,12 +42,12 @@ export class ProducerRecord {
   // this one. In that case, the other producer's destination will need to drop the grip
   // and it will be transferred to this producer's destination for the same context
   // which may mean this producer will need to create a new destination for the same
-  // context if it doesn't already exist which includes registering the destination 
+  // context if it doesn't already exist which includes registering the destination
   // param drips.
   readonly outputs = new Set<Grip<any>>();
 
   constructor(tap: Tap | TapFactory, outputs?: Iterable<Grip<any>>) {
-    if (tap.kind === 'TapFactory') {
+    if (tap.kind === "TapFactory") {
       this.tap = tap.build();
       this.tapFactory = tap;
     } else {
@@ -68,14 +68,17 @@ export class ProducerRecord {
       existing.registerDestinationParamDrips();
     }
     existing.addGrip(grip);
-    if (process.env.NODE_ENV !== 'production') logger.log(`[ProducerRecord] addDestinationGrip: Added ${grip.key} to ${destNode.id} for tap ${this.tap.constructor.name} (id=${(this.tap as any).id || 'no-id'}), now has ${this.destinations.size} destinations`);
+    if (process.env.NODE_ENV !== "production")
+      logger.log(
+        `[ProducerRecord] addDestinationGrip: Added ${grip.key} to ${destNode.id} for tap ${this.tap.constructor.name} (id=${(this.tap as any).id || "no-id"}), now has ${this.destinations.size} destinations`,
+      );
     const destCtx = destNode.get_context();
     if (added) {
       this.tap.onConnect?.(destCtx as GripContext, grip);
     } else {
       // Always produce initial values when a grip is added to a destination.
       if (destCtx) {
-        this.tap.produce({ destContext: destCtx });  // TODO This should be delayed/placed in a task queue.
+        this.tap.produce({ destContext: destCtx }); // TODO This should be delayed/placed in a task queue.
       }
     }
   }
@@ -98,11 +101,14 @@ export class ProducerRecord {
     }
   }
 
-  getDestinations(): Map<GripContextNode, Destination> { return this.destinations; }
+  getDestinations(): Map<GripContextNode, Destination> {
+    return this.destinations;
+  }
 
   // Add a destination for a grip.
   addDestination(destNode: GripContextNode, grip: Grip<any>): void {
-    if (process.env.NODE_ENV !== 'production') logger.log(`[ProducerRecord] addDestination: Adding ${grip.key} to ${destNode.id}`);
+    if (process.env.NODE_ENV !== "production")
+      logger.log(`[ProducerRecord] addDestination: Adding ${grip.key} to ${destNode.id}`);
     var existing = this.destinations.get(destNode);
     if (!existing) {
       existing = new Destination(destNode, this.tap, this);
@@ -115,7 +121,10 @@ export class ProducerRecord {
 
   // Remove the context/grip pair from this producer.
   removeDestinationGripForContext(destNode: GripContextNode, grip: Grip<any>): void {
-    if (process.env.NODE_ENV !== 'production') logger.log(`[ProducerRecord] removeDestinationGripForContext: Removing ${grip.key} from ${destNode.id}`);
+    if (process.env.NODE_ENV !== "production")
+      logger.log(
+        `[ProducerRecord] removeDestinationGripForContext: Removing ${grip.key} from ${destNode.id}`,
+      );
     const destination = this.destinations.get(destNode);
     if (destination) {
       destination.removeGrip(grip);
@@ -140,15 +149,16 @@ export class ProducerRecord {
 
   /**
    * Publish values to the targets of this producer.
-   * 
+   *
    * Each destination is updated with the values that are present in the values map
    * and only for the grips that the destination is subscribed to.
-   * 
+   *
    * If a destination context is gone, it is removed from the map.
    */
   publish(
-      values: Map<Grip<any>, any>, 
-      updater: (destCtx: GripContext, grip: Grip<any>, value: any) => void): number {
+    values: Map<Grip<any>, any>,
+    updater: (destCtx: GripContext, grip: Grip<any>, value: any) => void,
+  ): number {
     let count = 0;
     const destCtxsToRemove = new Set<GripContextNode>();
     try {
@@ -197,7 +207,12 @@ export class Destination implements DestinationParams {
    * each destination may only have a subset of the grips that the provider provides
    * because some grips may be shadowed by a different tap.
    */
-  constructor(destContextNode: GripContextNode, tap: Tap, producer: ProducerRecord, grips?: Iterable<Grip<any>>, ) {
+  constructor(
+    destContextNode: GripContextNode,
+    tap: Tap,
+    producer: ProducerRecord,
+    grips?: Iterable<Grip<any>>,
+  ) {
     this.destContextNode = destContextNode;
     this.tap = tap;
     this.grips = new Set(grips ?? []);
@@ -215,13 +230,16 @@ export class Destination implements DestinationParams {
       // Do not force-resolve the param consumer to a provider here.
       // Recording the consumer is enough for provider publishes to reach it.
       this.destinationParamDrips.set(grip, drip);
-      this.destinationDripsSubs.set(grip, drip.subscribePriority((_v) => {
-        // The produceOnDestParams should exist, let's throw if it doesn't.
-        // Only trigger if there is an actual value change to a defined value
-        if (drip.get() !== undefined) {
-          self.tap.produceOnDestParams!(this.destContextNode.get_context(), grip);
-        }
-      }));
+      this.destinationDripsSubs.set(
+        grip,
+        drip.subscribePriority((_v) => {
+          // The produceOnDestParams should exist, let's throw if it doesn't.
+          // Only trigger if there is an actual value change to a defined value
+          if (drip.get() !== undefined) {
+            self.tap.produceOnDestParams!(this.destContextNode.get_context(), grip);
+          }
+        }),
+      );
       // Do not kick initial evaluation on undefined to avoid creating producer links preemptively
     }
   }
@@ -233,7 +251,6 @@ export class Destination implements DestinationParams {
     this.producer.removeDestinationForContext(this.destContextNode);
   }
 
-  
   unsubscribeAllDestinationParams(): void {
     for (const [grip, sub] of this.destinationDripsSubs) {
       sub();
@@ -264,13 +281,13 @@ export class Destination implements DestinationParams {
   /**
    * Add a destination grip for this destination.
    */
-  addGrip(g: Grip<any>) { 
+  addGrip(g: Grip<any>) {
     if (this.grips.has(g)) return;
     if (this.grips.size === 0) {
       // Register for destination params on the first OUTPUT grip added (not for param grips)
       this.registerDestinationParamDrips();
     }
-    this.grips.add(g); 
+    this.grips.add(g);
     this.sanityCheck();
   }
 
@@ -280,10 +297,10 @@ export class Destination implements DestinationParams {
   removeGrip(g: Grip<any>) {
     try {
       if (!this.grips.has(g)) return;
-      this.grips.delete(g); 
+      this.grips.delete(g);
       if (this.grips.size === 0) {
         // Unregister for destination params if this is the last destination grip removed.
-          this.unregisterDestination();
+        this.unregisterDestination();
       }
     } finally {
       this.sanityCheck();
@@ -312,12 +329,12 @@ export class Destination implements DestinationParams {
     return this.destinationParamDrips;
   }
 
-  getContext(): GripContext | undefined { 
-    return this.destContextNode.contextRef.deref(); 
+  getContext(): GripContext | undefined {
+    return this.destContextNode.contextRef.deref();
   }
-  
+
   getContextNode() {
-    return this.destContextNode
+    return this.destContextNode;
   }
 
   // DestinationParams implementation
@@ -326,21 +343,21 @@ export class Destination implements DestinationParams {
     if (!ctx) throw new Error("Destination context is gone");
     return ctx;
   }
-  
+
   // Combined getter - checks destination params first, then home params
   get<T>(grip: Grip<T>): T | undefined {
     // First check destination params (higher priority)
     const destValue = this.getDestParam(grip);
     if (destValue !== undefined) return destValue;
-    
+
     // Fall back to home params
     return this.getHomeParam(grip);
   }
-  
+
   // Combined getAll - merges both maps (dest params override home params)
   getAll(): ReadonlyMap<Grip<any>, any> {
     const map = new Map();
-    
+
     // Start with home params
     const homeContext = this.tap.getHomeContext?.();
     if (homeContext && this.tap.homeParamGrips) {
@@ -353,7 +370,7 @@ export class Destination implements DestinationParams {
         }
       }
     }
-    
+
     // Override with dest params (higher priority)
     for (const [g, d] of this.destinationParamDrips) {
       const value = d.get();
@@ -361,20 +378,20 @@ export class Destination implements DestinationParams {
         map.set(g, value);
       }
     }
-    
+
     return map;
   }
-  
+
   // Combined has - checks both
   has(grip: Grip<any>): boolean {
     return this.hasDestParam(grip) || this.hasHomeParam(grip);
   }
-  
+
   getDestParam<T>(grip: Grip<T>): T | undefined {
     const d = this.destinationParamDrips.get(grip as unknown as Grip<any>);
     return d?.get() as T | undefined;
   }
-  
+
   getAllDestParams(): ReadonlyMap<Grip<any>, any> {
     const map = new Map();
     for (const [g, d] of this.destinationParamDrips) {
@@ -385,7 +402,7 @@ export class Destination implements DestinationParams {
     }
     return map;
   }
-  
+
   getHomeParam<T>(grip: Grip<T>): T | undefined {
     const homeContext = this.tap.getHomeContext?.();
     if (!homeContext) return undefined;
@@ -394,7 +411,7 @@ export class Destination implements DestinationParams {
     const drip = paramContext.getOrCreateConsumer(grip);
     return drip.get();
   }
-  
+
   getAllHomeParams(): ReadonlyMap<Grip<any>, any> {
     const map = new Map();
     const homeContext = this.tap.getHomeContext?.();
@@ -410,11 +427,11 @@ export class Destination implements DestinationParams {
     }
     return map;
   }
-  
+
   private hasDestParam(grip: Grip<any>): boolean {
     return this.destinationParamDrips.has(grip);
   }
-  
+
   private hasHomeParam(grip: Grip<any>): boolean {
     return this.tap.homeParamGrips?.includes(grip) ?? false;
   }
@@ -449,7 +466,7 @@ export class GripContextNode implements GripContextNodeIf {
   get_grok(): Grok {
     return this.grok;
   }
-  
+
   submitTask(callback: () => void, priority: number) {
     this.grok.submitTask(callback, priority, this.handleHolder);
   }
@@ -463,7 +480,7 @@ export class GripContextNode implements GripContextNodeIf {
   }
 
   get_parent_nodes(): GripContextNode[] {
-    return this.parents.map(p => p.node);
+    return this.parents.map((p) => p.node);
   }
 
   isRoot(): boolean {
@@ -473,7 +490,7 @@ export class GripContextNode implements GripContextNodeIf {
 
   // Expose a shallow copy of parents (for graph building / debug)
   getParents(): ReadonlyArray<GripContextNode> {
-    return this.get_parents_with_priority().map(p => p.node);
+    return this.get_parents_with_priority().map((p) => p.node);
   }
 
   get_parents_with_priority(): ReadonlyArray<{ node: GripContextNode; priority: number }> {
@@ -493,7 +510,7 @@ export class GripContextNode implements GripContextNodeIf {
   }
 
   addParent(parent: GripContextNode, priority: number = 0): void {
-    const existing = this.parents.find(p => p.node === parent);
+    const existing = this.parents.find((p) => p.node === parent);
     if (!existing) {
       this.parents.push({ node: parent, priority });
       // Sort by priority (lower priority values come first)
@@ -503,7 +520,7 @@ export class GripContextNode implements GripContextNodeIf {
   }
 
   removeParent(parent: GripContextNode): void {
-    const idx = this.parents.findIndex(p => p.node === parent);
+    const idx = this.parents.findIndex((p) => p.node === parent);
     if (idx === -1) {
       throw new Error(`Parent ${parent.id} is not a parent of ${this.id}`);
     }
@@ -522,13 +539,13 @@ export class GripContextNode implements GripContextNodeIf {
       for (const grip of producerRecord.outputs) {
         this.producers.delete(grip);
       }
-      
+
       // Delete both the factory and tap instance keys if they exist
       this.producerByTap.delete(tap);
       if (producerRecord.tapFactory) {
         this.producerByTap.delete(producerRecord.tapFactory);
       }
-      
+
       producerRecord.tap.onDetach?.();
     }
   }
@@ -546,13 +563,16 @@ export class GripContextNode implements GripContextNodeIf {
     this.resolvedProviders.set(grip as unknown as Grip<any>, node);
   }
 
-  getOrCreateProducerRecord(tapOrFactory: Tap | TapFactory, outputs?: Iterable<Grip<any>>): ProducerRecord {
+  getOrCreateProducerRecord(
+    tapOrFactory: Tap | TapFactory,
+    outputs?: Iterable<Grip<any>>,
+  ): ProducerRecord {
     // First check if we already have a record for this tap/factory
     let rec = this.producerByTap.get(tapOrFactory);
     if (!rec) {
       // Create a new ProducerRecord (which will build the tap if it's a factory)
       rec = new ProducerRecord(tapOrFactory, outputs);
-      
+
       // Store the record using BOTH the original key AND the tap instance as keys
       // This ensures we can find it whether we look up by factory or by tap instance
       this.producerByTap.set(tapOrFactory, rec);
@@ -560,12 +580,18 @@ export class GripContextNode implements GripContextNodeIf {
         // If we built from a factory, also store by the tap instance
         this.producerByTap.set(rec.tap, rec);
       }
-      
+
       const tapInstance = rec.tap;
-      if (process.env.NODE_ENV !== 'production') logger.log(`[GripContextNode] Created new ProducerRecord for tap ${tapInstance.constructor.name} (id=${(tapInstance as any).id}) in context ${this.id}`);
+      if (process.env.NODE_ENV !== "production")
+        logger.log(
+          `[GripContextNode] Created new ProducerRecord for tap ${tapInstance.constructor.name} (id=${(tapInstance as any).id}) in context ${this.id}`,
+        );
     } else {
       const tapInstance = rec.tap;
-      if (process.env.NODE_ENV !== 'production') logger.log(`[GripContextNode] Found existing ProducerRecord for tap ${tapInstance.constructor.name} (id=${(tapInstance as any).id}) in context ${this.id}`);
+      if (process.env.NODE_ENV !== "production")
+        logger.log(
+          `[GripContextNode] Found existing ProducerRecord for tap ${tapInstance.constructor.name} (id=${(tapInstance as any).id}) in context ${this.id}`,
+        );
     }
     return rec;
   }
@@ -662,8 +688,12 @@ export class GripContextNode implements GripContextNodeIf {
     return count;
   }
 
-  touch(): void { this.lastSeen = Date.now(); }
-  getLastSeen(): number { return this.lastSeen; }
+  touch(): void {
+    this.lastSeen = Date.now();
+  }
+  getLastSeen(): number {
+    return this.lastSeen;
+  }
 }
 
 export class GrokGraph {
@@ -734,19 +764,19 @@ export class GrokGraph {
   }
 
   snapshotSanityCheck(): {
-    nodes: ReadonlyMap<string, GripContextNode>, 
-    missingNodes: ReadonlySet<GripContextNode>,
-    nodesNotReaped: ReadonlySet<GripContextNode>,
+    nodes: ReadonlyMap<string, GripContextNode>;
+    missingNodes: ReadonlySet<GripContextNode>;
+    nodesNotReaped: ReadonlySet<GripContextNode>;
   } {
     const allNodes = new Map<string, GripContextNode>();
     const nodesToCheck = [...this.nodes.values()];
     const missingNodes = new Set<GripContextNode>();
-    
+
     while (nodesToCheck.length > 0) {
       const node = nodesToCheck.pop();
       if (allNodes.has(node!.id)) continue;
       allNodes.set(node!.id, node!);
-      
+
       // Check children and clean up stale references
       const validChildren: GripContextNode[] = [];
       node!.children.forEach((child) => {
@@ -761,7 +791,7 @@ export class GrokGraph {
           }
         }
       });
-      
+
       // Clean up stale children references
       if (validChildren.length !== node!.children.length) {
         node!.children.length = 0;
@@ -770,8 +800,14 @@ export class GrokGraph {
     }
 
     if (missingNodes.size > 0) {
-      if (process.env.NODE_ENV !== 'production') logger.log(
-        `GrokGraph: snapshotSanityCheck: found ${missingNodes.size} orphaned nodes: ${Array.from(missingNodes).map(n => n.id).join(", ")}`);
+      if (process.env.NODE_ENV !== "production")
+        logger.log(
+          `GrokGraph: snapshotSanityCheck: found ${missingNodes.size} orphaned nodes: ${Array.from(
+            missingNodes,
+          )
+            .map((n) => n.id)
+            .join(", ")}`,
+        );
     }
 
     const weakNodesToDelete = new Set<string>();
@@ -782,7 +818,10 @@ export class GrokGraph {
       if (node) {
         if (!allNodes.has(node.id)) {
           nodesNotReaped.add(node);
-          if (process.env.NODE_ENV !== 'production') logger.warn(`GrokGraph: Sanity Check Warning: Node ${id} is in the active graph but not in the weakNodes map. This indicates an inconsistency.`);
+          if (process.env.NODE_ENV !== "production")
+            logger.warn(
+              `GrokGraph: Sanity Check Warning: Node ${id} is in the active graph but not in the weakNodes map. This indicates an inconsistency.`,
+            );
         }
       } else {
         weakNodesToDelete.add(id);
@@ -793,7 +832,7 @@ export class GrokGraph {
       this.weakNodes.delete(id);
     }
 
-    return {nodes: allNodes, missingNodes: missingNodes, nodesNotReaped: nodesNotReaped};
+    return { nodes: allNodes, missingNodes: missingNodes, nodesNotReaped: nodesNotReaped };
   }
 
   // Notify all live consumers for a grip in a destination context
@@ -807,18 +846,20 @@ export class GrokGraph {
     if (this.gcTimer) return;
     this.gcTimer = setInterval(() => this.gcSweep(), this.gcIntervalMs);
     // Avoid keeping the process alive due to GC timer
-    try { (this.gcTimer as any).unref?.(); } catch {}
+    try {
+      (this.gcTimer as any).unref?.();
+    } catch {}
   }
 
   private gcSweep() {
     const now = Date.now();
     const nodesToDelete = new Set<string>();
-    
+
     // First pass: identify nodes to delete
     for (const [id, node] of this.nodes) {
       const ctx = node.contextRef.deref();
       const contextGone = !ctx;
-      const count = node.purgeDanglingDrips();  // Returns the number of drips remaining.
+      const count = node.purgeDanglingDrips(); // Returns the number of drips remaining.
       const noConsumers = count === 0;
 
       // If the context is gone, there are no consumers, and the node has no children,
@@ -827,7 +868,7 @@ export class GrokGraph {
         nodesToDelete.add(id);
       }
     }
-    
+
     // Second pass: clean up nodes and their relationships
     for (const id of nodesToDelete) {
       const node = this.nodes.get(id);
@@ -836,12 +877,10 @@ export class GrokGraph {
         this.nodes.delete(id);
       }
     }
-    
+
     // Third pass: clean up any stale child references in remaining nodes
     for (const [id, node] of this.nodes) {
-      const validChildren = node.children.filter(child => 
-        this.nodes.has(child.id)
-      );
+      const validChildren = node.children.filter((child) => this.nodes.has(child.id));
       if (validChildren.length !== node.children.length) {
         node.children.length = 0;
         node.children.push(...validChildren);
@@ -874,7 +913,7 @@ export class GrokGraph {
         }
       }
     }
-    
+
     // Clear the arrays to avoid holding references
     node.parents.length = 0;
     node.children.length = 0;
@@ -888,5 +927,3 @@ export class GrokGraph {
     return count;
   }
 }
-
-

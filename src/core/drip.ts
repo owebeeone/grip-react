@@ -4,9 +4,9 @@ export type Unsubscribe = () => void;
 
 /**
  * A Drip is a value that can be subscribed to.
- * 
+ *
  * This is used by data consumers to get the latest value of a data source.
- * 
+ *
  * This is what is returned by the useGrip hook in react.
  */
 export class Drip<T> {
@@ -33,7 +33,7 @@ export class Drip<T> {
    * Set the value of the drip.
    *
    * If the new value is the same as the current value, subscribers are not notified.
-   * 
+   *
    * This will enqueue a task to notify non immediate subscribers.
    * It will also notify immediate subscribers directly.
    */
@@ -46,7 +46,7 @@ export class Drip<T> {
 
   /**
    * Enqueue a task to notify subscribers.
-   * 
+   *
    * This will notify immediate subscribers directly.
    * It will also enqueue a task to notify non immediate subscribers.
    */
@@ -65,22 +65,25 @@ export class Drip<T> {
   }
 
   notifySubscribers(): void {
-    this.subs.forEach(fn => fn(this.value));
+    this.subs.forEach((fn) => fn(this.value));
   }
-  
+
   notifyImmediateSubscribers(): void {
-    this.immediateSubs.forEach(fn => fn(this.value));
+    this.immediateSubs.forEach((fn) => fn(this.value));
   }
 
   hasSubscribers(): boolean {
     return this.subs.size > 0 || this.immediateSubs.size > 0;
   }
 
-  subscribeWith(queue: Set<(v: T | undefined) => void>, fn: (v: T | undefined) => void): Unsubscribe {
-    const wasEmpty = ! this.hasSubscribers();
+  subscribeWith(
+    queue: Set<(v: T | undefined) => void>,
+    fn: (v: T | undefined) => void,
+  ): Unsubscribe {
+    const wasEmpty = !this.hasSubscribers();
     queue.add(fn);
     if (wasEmpty) {
-      this.firstSubCallbacks.forEach(cb => cb());
+      this.firstSubCallbacks.forEach((cb) => cb());
     }
     return () => {
       if (queue.has(fn)) {
@@ -92,7 +95,7 @@ export class Drip<T> {
           this.context?.submitWeakTask(() => {
             self.zeroCheckScheduled = false;
             if (!self.hasSubscribers()) {
-              self.zeroSubCallbacks.forEach(cb => cb());
+              self.zeroSubCallbacks.forEach((cb) => cb());
             }
           });
         }
@@ -120,7 +123,7 @@ export class Drip<T> {
     if (this.hasSubscribers()) {
       this.subs.clear();
       this.immediateSubs.clear();
-      this.zeroSubCallbacks.forEach(cb => cb());
+      this.zeroSubCallbacks.forEach((cb) => cb());
     }
     this.context = null;
   }
@@ -133,7 +136,7 @@ export class Drip<T> {
       this.context?.submitWeakTask(() => {
         self.zeroCheckScheduled = false;
         if (!self.hasSubscribers()) {
-          self.zeroSubCallbacks.forEach(cb => cb());
+          self.zeroSubCallbacks.forEach((cb) => cb());
         }
       });
     }

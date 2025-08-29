@@ -38,11 +38,15 @@ export class TaskHandleHolder implements TaskHandleContainer {
     const idx = this.handles.indexOf(handle);
     if (idx >= 0) this.handles.splice(idx, 1);
   }
-  getHandles(): ReadonlyArray<TaskHandle> { return this.handles; }
-  get size(): number { return this.handles.length; }
+  getHandles(): ReadonlyArray<TaskHandle> {
+    return this.handles;
+  }
+  get size(): number {
+    return this.handles.length;
+  }
   cancelAll(): void {
     while (this.handles.length > 0) {
-        this.handles[0].cancel();
+      this.handles[0].cancel();
     }
   }
 }
@@ -82,7 +86,9 @@ interface InternalTask {
 class MinHeap {
   private items: InternalTask[] = [];
 
-  get size(): number { return this.items.length; }
+  get size(): number {
+    return this.items.length;
+  }
 
   push(task: InternalTask): void {
     this.items.push(task);
@@ -164,7 +170,9 @@ export class TaskQueue {
   }
 
   /** Number of tasks currently queued (including cancelled/unresolvable weak tasks). */
-  get size(): number { return this.heap.size; }
+  get size(): number {
+    return this.heap.size;
+  }
 
   /**
    * Submit a task with an optional priority (default 0). Lower numbers run first.
@@ -179,7 +187,7 @@ export class TaskQueue {
       state: "pending",
     };
     if (holder) {
-        task.handle = this.createHandle(task, holder);
+      task.handle = this.createHandle(task, holder);
     }
     this.heap.push(task);
     this.scheduleFlushIfNeeded();
@@ -206,7 +214,7 @@ export class TaskQueue {
       state: "pending",
     };
     if (holder) {
-        task.handle = this.createHandle(task, holder);
+      task.handle = this.createHandle(task, holder);
     }
     this.heap.push(task);
     this.scheduleFlushIfNeeded();
@@ -278,13 +286,15 @@ export class TaskQueue {
 
   private reportAsyncError(error: unknown): void {
     // Best-effort async error reporting without throwing inside the flush loop
-    setTimeout(() => { throw error; }, 0);
+    setTimeout(() => {
+      throw error;
+    }, 0);
   }
 }
 
 /**
  * A task handle.
- * 
+ *
  * Represents the queued task.
  */
 class TaskHandleImpl implements TaskHandle {
@@ -304,14 +314,25 @@ class TaskHandleImpl implements TaskHandle {
     return true;
   }
 
-  isRunning(): boolean { return this.task.state === "running"; }
-  isCancelled(): boolean { return this.task.state === "cancelled"; }
-  isPending(): boolean { return this.task.state === "pending"; }
-  isCompleted(): boolean { return this.task.state === "completed"; }
+  isRunning(): boolean {
+    return this.task.state === "running";
+  }
+  isCancelled(): boolean {
+    return this.task.state === "cancelled";
+  }
+  isPending(): boolean {
+    return this.task.state === "pending";
+  }
+  isCompleted(): boolean {
+    return this.task.state === "completed";
+  }
 
   notifyNoLongerPending(): void {
     if (this.removed) return;
-    try { this.holder.remove(this); } finally { this.removed = true; }
+    try {
+      this.holder.remove(this);
+    } finally {
+      this.removed = true;
+    }
   }
 }
-

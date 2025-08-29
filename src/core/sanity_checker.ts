@@ -16,13 +16,15 @@ export class GripGraphSanityChecker {
   private buildIndex(): void {
     // Rule: param-only destinations without outputs
 
-    const {nodes, missingNodes} = this.grok.getGraphSanityCheck();
+    const { nodes, missingNodes } = this.grok.getGraphSanityCheck();
     for (const node of nodes.values()) {
-
       // Scan children that don't node as a parent.
       for (const child of node.get_children_nodes()) {
         if (!child.get_parent_nodes().includes(node)) {
-          this.addIssue(child, `Parent ${node.id} has child ${child.id} but child does not have parent ${node.id}`);
+          this.addIssue(
+            child,
+            `Parent ${node.id} has child ${child.id} but child does not have parent ${node.id}`,
+          );
         }
       }
 
@@ -30,7 +32,8 @@ export class GripGraphSanityChecker {
         for (const [destNode, destination] of rec.getDestinations()) {
           const outputs = Array.from(destination.getGrips());
           const tap: any = rec.tap as any;
-          const hasDestParams = Array.isArray(tap.destinationParamGrips) && tap.destinationParamGrips.length > 0;
+          const hasDestParams =
+            Array.isArray(tap.destinationParamGrips) && tap.destinationParamGrips.length > 0;
 
           // Determine whether all destination-parameter drips have zero subscribers
           const paramDrips = Array.from(destination.getDestinationParamDrips().values());
@@ -38,7 +41,7 @@ export class GripGraphSanityChecker {
             const anyDrip = d as any;
             const a = anyDrip?.subs instanceof Set ? anyDrip.subs.size : 0;
             const b = anyDrip?.immediateSubs instanceof Set ? anyDrip.immediateSubs.size : 0;
-            return (a + b) === 0;
+            return a + b === 0;
           });
 
           if (hasDestParams && outputs.length === 0) {
@@ -74,5 +77,3 @@ export class GripGraphSanityChecker {
     return out;
   }
 }
-
-

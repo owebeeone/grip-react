@@ -1,19 +1,19 @@
-import { describe, it, expect } from 'vitest';
-import { Drip } from '../src/core/drip';
-import { GripRegistry, GripOf, Grip } from '../src/core/grip';
-import { Grok } from '../src/core/grok';
-import { GripContext } from '../src/core/context';
-import type { Tap } from '../src/core/tap';
-import { BaseTap } from '../src/core/base_tap';
-import { createAtomValueTap } from '../src/core/atom_tap';
+import { describe, it, expect } from "vitest";
+import { Drip } from "../src/core/drip";
+import { GripRegistry, GripOf, Grip } from "../src/core/grip";
+import { Grok } from "../src/core/grok";
+import { GripContext } from "../src/core/context";
+import type { Tap } from "../src/core/tap";
+import { BaseTap } from "../src/core/base_tap";
+import { createAtomValueTap } from "../src/core/atom_tap";
 
 // Engine-level behavior test plan (TDD skeleton)
 
-describe('Engine shared drip semantics', () => {
-  it('returns the same drip instance for repeated queries of same (ctx, grip, tap)', () => {
+describe("Engine shared drip semantics", () => {
+  it("returns the same drip instance for repeated queries of same (ctx, grip, tap)", () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
-    const VALUE = defineGrip<number>('Value', 0);
+    const VALUE = defineGrip<number>("Value", 0);
     const grok = new Grok();
     const ctx = grok.mainHomeContext.createChild();
     const tap = createAtomValueTap(VALUE, { initial: 42 }) as unknown as Tap;
@@ -24,17 +24,21 @@ describe('Engine shared drip semantics', () => {
     expect(d1.get()).toBe(42);
   });
 
-  it('drip supports multiple subscribers and onFirst/onZero fire appropriately', () => {
+  it("drip supports multiple subscribers and onFirst/onZero fire appropriately", () => {
     const grok = new Grok();
     const d = new Drip<number>(grok.mainHomeContext, 1);
     let first = 0;
     let zero = 0;
-    d.addOnFirstSubscriber(() => { first += 1; });
-    d.addOnZeroSubscribers(() => { zero += 1; });
+    d.addOnFirstSubscriber(() => {
+      first += 1;
+    });
+    d.addOnZeroSubscribers(() => {
+      zero += 1;
+    });
     const seen: number[] = [];
-    const u1 = d.subscribe(v => seen.push(v as number));
+    const u1 = d.subscribe((v) => seen.push(v as number));
     expect(first).toBe(1);
-    const u2 = d.subscribe(v => seen.push((v as number) * 10));
+    const u2 = d.subscribe((v) => seen.push((v as number) * 10));
     d.next(2);
     grok.flush();
     expect(seen).toEqual([2, 20]);
@@ -46,12 +50,12 @@ describe('Engine shared drip semantics', () => {
   });
 });
 
-describe('Engine parameter-driven updates', () => {
-  it('changing a destination parameter grip invalidates cached mapping (new drip on re-query)', () => {
+describe("Engine parameter-driven updates", () => {
+  it("changing a destination parameter grip invalidates cached mapping (new drip on re-query)", () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
-    const PARAM = defineGrip<string>('Param', 'A');
-    const OUT = defineGrip<number>('Out', 0);
+    const PARAM = defineGrip<string>("Param", "A");
+    const OUT = defineGrip<number>("Out", 0);
     const grok = new Grok();
     const ctx = grok.mainHomeContext.createChild();
     // Producer that depends on PARAM using BaseTap's destinationParamGrips
@@ -66,7 +70,7 @@ describe('Engine parameter-driven updates', () => {
       produce(opts?: { destContext?: GripContext }): void {
         if (opts?.destContext) {
           const paramVal = opts.destContext.getOrCreateConsumer(this.paramGrip).get();
-          const value = paramVal === 'A' ? 1 : 2;
+          const value = paramVal === "A" ? 1 : 2;
           const updates = new Map<any, any>([[this.outGrip as any, value]]);
           this.publish(updates, opts.destContext);
         } else {
@@ -84,12 +88,12 @@ describe('Engine parameter-driven updates', () => {
     }
     const tap = new ParamOutTap(OUT, PARAM) as unknown as Tap;
     grok.registerTap(tap);
-    const paramHandle = createAtomValueTap(PARAM, { initial: 'A' }) as unknown as Tap;
+    const paramHandle = createAtomValueTap(PARAM, { initial: "A" }) as unknown as Tap;
     grok.registerTap(paramHandle);
     const d1 = grok.query(OUT, ctx);
     expect(d1.get()).toBe(1);
     // Change param; next query should yield a new drip reflecting new param
-    (paramHandle as any).set('B');
+    (paramHandle as any).set("B");
     // Evict mapping for this (tap, grip, dest) by querying a different grip or simulate eviction by clearing cache entry
     // For now, re-query still returns same instance under current engine; validate new value
     const d2 = grok.query(OUT, ctx);
@@ -98,18 +102,18 @@ describe('Engine parameter-driven updates', () => {
   });
 });
 
-describe('Engine add/remove live taps', () => {
-  it('registering at ancestor connects descendants where applicable', () => {
+describe("Engine add/remove live taps", () => {
+  it("registering at ancestor connects descendants where applicable", () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
-    const OUT = defineGrip<number>('Out', 33);
+    const OUT = defineGrip<number>("Out", 33);
     const grok = new Grok();
     const A = grok.mainHomeContext.createChild();
     const B = A.createChild();
 
     const dA = grok.query(OUT, A);
     var dAunsub = false;
-    const dAsub = dA.subscribe(v => {
+    const dAsub = dA.subscribe((v) => {
       dAunsub = true;
     });
     expect(dA.get()).toBe(33);
@@ -117,23 +121,23 @@ describe('Engine add/remove live taps', () => {
     // Initially, no tap: descendant resolves to default
     const d0 = grok.query(OUT, B);
     var d0count = 0;
-    const dBsub = d0.subscribe(v => {
+    const dBsub = d0.subscribe((v) => {
       d0count += 1;
     });
 
     expect(d0.get()).toBe(33);
     expect(dA.get()).toBe(33);
     grok.flush();
-    expect(d0count).toBe(0);  // Gets updated before the tap is registered.
+    expect(d0count).toBe(0); // Gets updated before the tap is registered.
 
     // Register a tap (global registration acts as ancestor availability)
-    const tap = createAtomValueTap(OUT, { initial: 123 });  // register at main context.
-    grok.registerTap(tap);  // register at main context.
+    const tap = createAtomValueTap(OUT, { initial: 123 }); // register at main context.
+    grok.registerTap(tap); // register at main context.
 
     // Descendant now resolves to the tap-produced value
     const d1 = grok.query(OUT, B);
     var d1count = 0;
-    const dBsub2 = d1.subscribe(v => {
+    const dBsub2 = d1.subscribe((v) => {
       d1count += 1;
     });
 
@@ -141,7 +145,7 @@ describe('Engine add/remove live taps', () => {
     expect(d1.get()).toBe(123);
     expect(dA.get()).toBe(123);
     grok.flush();
-    expect(d0count).toBe(1);  // Gets updated before the tap is registered.
+    expect(d0count).toBe(1); // Gets updated before the tap is registered.
 
     // A closer provider via local tap overshadows the ancestor tap
     const localTap = createAtomValueTap(OUT, { initial: 7 });
@@ -168,24 +172,23 @@ describe('Engine add/remove live taps', () => {
     grok.flush();
     expect(d0count).toBe(3);
 
-
     dBsub(); // Unsubscribe from d0.
     localTap.set(66);
     expect(dA.get()).toBe(33);
     expect(d2.get()).toBe(66);
     grok.flush();
-    expect(d0count).toBe(3);  // Unsubscribed, so no update.
+    expect(d0count).toBe(3); // Unsubscribed, so no update.
 
     // Unregister the tap at B.
     grok.unregisterTap(localTap);
     expect(dA.get()).toBe(33);
     expect(d2.get()).toBe(33);
   });
-  
-  it('unregistering disconnects and re-resolves to next provider', () => {
+
+  it("unregistering disconnects and re-resolves to next provider", () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
-    const OUT = defineGrip<number>('Out', 44);
+    const OUT = defineGrip<number>("Out", 44);
     const grok = new Grok();
     const A = grok.mainHomeContext.createChild();
     const B = A.createChild();
@@ -195,7 +198,7 @@ describe('Engine add/remove live taps', () => {
 
     // Register tap1 at ancestor A, tap2 at main; B sees closer tap1
     grok.registerTapAt(A, tap1);
-    grok.registerTap(tap2);  // Register at main context
+    grok.registerTap(tap2); // Register at main context
     const d1 = grok.query(OUT, B);
     expect(d1.get()).toBe(111);
 
@@ -208,13 +211,13 @@ describe('Engine add/remove live taps', () => {
     // Remove T2 as well: falls back to default
     grok.unregisterTap(tap2);
     const d3 = grok.query(OUT, B);
-    expect(d3.get()).toBe(44); 
+    expect(d3.get()).toBe(44);
   });
 
-  it('proximity-based selection ignores registration order', () => {
+  it("proximity-based selection ignores registration order", () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
-    const OUT = defineGrip<number>('Out', 0);
+    const OUT = defineGrip<number>("Out", 0);
     const grok = new Grok();
     const A = grok.mainHomeContext.createChild();
     const B = A.createChild();
@@ -232,5 +235,3 @@ describe('Engine add/remove live taps', () => {
     expect(d.get()).toBe(2);
   });
 });
-
-

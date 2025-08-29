@@ -29,25 +29,25 @@ export interface QueryBinding {
  * The result of adding a new binding to the evaluator.
  */
 export interface AddBindingResult {
-    /**
-     * A set of input Grips that were not known to the evaluator before this binding was added.
-     */
-    newInputs: Set<Grip<any>>;
-    /**
-     * A set of input Grips that are no longer used by any query as a result of this binding update.
-     * This is only populated when an existing binding is replaced.
-     */
-    removedInputs: Set<Grip<any>>;
+  /**
+   * A set of input Grips that were not known to the evaluator before this binding was added.
+   */
+  newInputs: Set<Grip<any>>;
+  /**
+   * A set of input Grips that are no longer used by any query as a result of this binding update.
+   * This is only populated when an existing binding is replaced.
+   */
+  removedInputs: Set<Grip<any>>;
 }
 
 /**
  * The result of removing a binding from the evaluator.
  */
 export interface RemoveBindingResult {
-    /**
-     * A set of input Grips that are no longer used by any query after this binding was removed.
-     */
-    removedInputs: Set<Grip<any>>;
+  /**
+   * A set of input Grips that are no longer used by any query after this binding was removed.
+   */
+  removedInputs: Set<Grip<any>>;
 }
 
 /**
@@ -74,43 +74,45 @@ export interface TapAttribution {
  * Represents the change in attributions after an evaluation.
  */
 export interface EvaluationDelta {
-    added: Map<Tap | TapFactory, TapAttribution>;
-    removed: Map<Tap | TapFactory, TapAttribution>; // The old value that was removed
+  added: Map<Tap | TapFactory, TapAttribution>;
+  removed: Map<Tap | TapFactory, TapAttribution>; // The old value that was removed
 }
 
 export function evaluationToString(delta: EvaluationDelta): string {
   const formatAttribution = (attribution: TapAttribution): string => {
-    const tapId = (attribution.producerTap as any).id 
-      ?? (attribution.producerTap as any).label 
-      ?? attribution.bindingId 
-      ?? 'UnknownTap';
-    const grips = Array.from(attribution.attributedGrips).map(g => g.key).join(', ');
+    const tapId =
+      (attribution.producerTap as any).id ??
+      (attribution.producerTap as any).label ??
+      attribution.bindingId ??
+      "UnknownTap";
+    const grips = Array.from(attribution.attributedGrips)
+      .map((g) => g.key)
+      .join(", ");
     return `  Tap '${tapId}': [${grips}]`;
   };
 
-  let result = 'EvaluationDelta:\n';
+  let result = "EvaluationDelta:\n";
 
   if (delta.added.size > 0) {
     result += ` Added (${delta.added.size}):\n`;
-    delta.added.forEach(attr => {
+    delta.added.forEach((attr) => {
       result += `${formatAttribution(attr)}\n`;
     });
   }
 
   if (delta.removed.size > 0) {
     result += ` Removed (${delta.removed.size}):\n`;
-    delta.removed.forEach(attr => {
+    delta.removed.forEach((attr) => {
       result += `${formatAttribution(attr)}\n`;
     });
   }
 
   if (delta.added.size === 0 && delta.removed.size === 0) {
-    result += ' No changes.';
+    result += " No changes.";
   }
 
   return result;
 }
-
 
 // ---[ Utility Components ]------------------------------------------------------
 
@@ -175,40 +177,38 @@ export class InvertedIndex {
  * A stateless utility to handle attribution logic.
  */
 class AttributionUtility {
+  public attribute(matches: MatchedTap[]): Map<Tap | TapFactory, TapAttribution> {
+    const attributed = new Map<Tap | TapFactory, TapAttribution>();
+    const partitioner = new DisjointSetPartitioner<MatchedTap, Grip<any>>();
 
-    public attribute(matches: MatchedTap[]): Map<Tap | TapFactory, TapAttribution> {
-        const attributed = new Map<Tap | TapFactory, TapAttribution>();
-        const partitioner = new DisjointSetPartitioner<MatchedTap, Grip<any>>();
-
-        for (const match of matches) {
-            partitioner.add(match, Array.from(match.tap.provides));
-        }
-
-        for (const partition of partitioner.getPartitions()) {
-            const sortedTaps = Array.from(partition).sort((a, b) => 
-                b.score - a.score || a.bindingId.localeCompare(b.bindingId)
-            );
-            const seenOutputs = new Set<Grip<any>>();
-
-            for (const matchedTap of sortedTaps) {
-                const novelOutputs = Array.from(matchedTap.tap.provides).filter(g => !seenOutputs.has(g));
-
-                if (novelOutputs.length > 0) {
-                    const tapAttribution: TapAttribution = {
-                        producerTap: matchedTap.tap,
-                        score: matchedTap.score,
-                        bindingId: matchedTap.bindingId,
-                        attributedGrips: new Set(novelOutputs),
-                    };
-                    attributed.set(matchedTap.tap, tapAttribution);
-                    novelOutputs.forEach(g => seenOutputs.add(g));
-                }
-            }
-        }
-        return attributed;
+    for (const match of matches) {
+      partitioner.add(match, Array.from(match.tap.provides));
     }
-}
 
+    for (const partition of partitioner.getPartitions()) {
+      const sortedTaps = Array.from(partition).sort(
+        (a, b) => b.score - a.score || a.bindingId.localeCompare(b.bindingId),
+      );
+      const seenOutputs = new Set<Grip<any>>();
+
+      for (const matchedTap of sortedTaps) {
+        const novelOutputs = Array.from(matchedTap.tap.provides).filter((g) => !seenOutputs.has(g));
+
+        if (novelOutputs.length > 0) {
+          const tapAttribution: TapAttribution = {
+            producerTap: matchedTap.tap,
+            score: matchedTap.score,
+            bindingId: matchedTap.bindingId,
+            attributedGrips: new Set(novelOutputs),
+          };
+          attributed.set(matchedTap.tap, tapAttribution);
+          novelOutputs.forEach((g) => seenOutputs.add(g));
+        }
+      }
+    }
+    return attributed;
+  }
+}
 
 /**
  * The central query evaluator for the GRIP engine. Now supports incremental
@@ -228,22 +228,25 @@ export class QueryEvaluator {
   private useCache: boolean;
   private queryPartitioner = new DisjointSetPartitioner<Query, Grip<any>>();
   private precomputationThreshold: number;
-  private precomputedMaps = new Map<Set<Query>, TupleMap<any[], Map<Tap | TapFactory, TapAttribution>>>();
+  private precomputedMaps = new Map<
+    Set<Query>,
+    TupleMap<any[], Map<Tap | TapFactory, TapAttribution>>
+  >();
   private runtimeEvaluationSets = new Set<Set<Query>>();
   private cache = new TupleMap<any[], Map<Tap | TapFactory, TapAttribution>>();
   private queryToPartition = new Map<Query, Set<Query>>();
   private partitionToKeyGrips = new Map<Set<Query>, Grip<any>[]>();
 
   constructor(
-    initialBindings: QueryBinding[] = [], 
-    precomputationThreshold: number = 1000, 
+    initialBindings: QueryBinding[] = [],
+    precomputationThreshold: number = 1000,
     useHybridEvaluation: boolean = true,
-    useCache: boolean = true
+    useCache: boolean = true,
   ) {
     this.precomputationThreshold = precomputationThreshold;
     this.useHybridEvaluation = useHybridEvaluation;
     this.useCache = useCache;
-    initialBindings.forEach(b => this.addBinding(b));
+    initialBindings.forEach((b) => this.addBinding(b));
   }
 
   /**
@@ -264,8 +267,8 @@ export class QueryEvaluator {
     let removedInputs = new Set<Grip<any>>();
 
     if (this.bindings.has(binding.id)) {
-        const removeResult = this.removeBinding(binding.id);
-        removedInputs = removeResult.removedInputs;
+      const removeResult = this.removeBinding(binding.id);
+      removedInputs = removeResult.removedInputs;
     }
 
     this.bindings.set(binding.id, binding);
@@ -274,15 +277,18 @@ export class QueryEvaluator {
     this.cache.clear();
 
     for (const grip of binding.query.conditions.keys()) {
-        const currentCount = this.inputGripRefCounts.get(grip) || 0;
-        if (currentCount === 0) {
-            newInputs.add(grip);
-        }
-        this.inputGripRefCounts.set(grip, currentCount + 1);
+      const currentCount = this.inputGripRefCounts.get(grip) || 0;
+      if (currentCount === 0) {
+        newInputs.add(grip);
+      }
+      this.inputGripRefCounts.set(grip, currentCount + 1);
     }
-    
+
     if (this.useHybridEvaluation) {
-      const changedPartitionRecord = this.queryPartitioner.add(binding.query, Array.from(binding.query.conditions.keys()));
+      const changedPartitionRecord = this.queryPartitioner.add(
+        binding.query,
+        Array.from(binding.query.conditions.keys()),
+      );
       this.updateHybridStateForPartition(changedPartitionRecord.items);
     }
     return { newInputs, removedInputs };
@@ -304,23 +310,23 @@ export class QueryEvaluator {
       this.cache.clear();
 
       for (const grip of binding.query.conditions.keys()) {
-          const currentCount = this.inputGripRefCounts.get(grip);
-          if (currentCount) {
-              if (currentCount === 1) {
-                  this.inputGripRefCounts.delete(grip);
-                  removedInputs.add(grip);
-              } else {
-                  this.inputGripRefCounts.set(grip, currentCount - 1);
-              }
+        const currentCount = this.inputGripRefCounts.get(grip);
+        if (currentCount) {
+          if (currentCount === 1) {
+            this.inputGripRefCounts.delete(grip);
+            removedInputs.add(grip);
+          } else {
+            this.inputGripRefCounts.set(grip, currentCount - 1);
           }
+        }
       }
-      
+
       if (this.useHybridEvaluation) {
         const removedFrom = this.queryPartitioner.remove(binding.query);
         if (removedFrom) {
           this.clearHybridStateForPartition(removedFrom.items);
           const newPartitions = this.queryPartitioner.repartitionDirtySets();
-          newPartitions.forEach(p => this.updateHybridStateForPartition(p.items));
+          newPartitions.forEach((p) => this.updateHybridStateForPartition(p.items));
         }
       }
     }
@@ -343,76 +349,75 @@ export class QueryEvaluator {
     } else {
       this.runtimeEvaluationSets.add(partition);
     }
-    partition.forEach(q => this.queryToPartition.set(q, partition));
+    partition.forEach((q) => this.queryToPartition.set(q, partition));
   }
-  
+
   private clearHybridStateForPartition(partition: Set<Query>): void {
-      this.precomputedMaps.delete(partition);
-      this.runtimeEvaluationSets.delete(partition);
-      this.partitionToKeyGrips.delete(partition);
-      partition.forEach(q => this.queryToPartition.delete(q));
+    this.precomputedMaps.delete(partition);
+    this.runtimeEvaluationSets.delete(partition);
+    this.partitionToKeyGrips.delete(partition);
+    partition.forEach((q) => this.queryToPartition.delete(q));
   }
 
   private calculateComplexity(partition: Set<Query>): number {
-      const gripValues = new Map<Grip<any>, Set<any>>();
-      for (const query of partition) {
-          for (const [grip, valuesMap] of query.conditions.entries()) {
-              if (!gripValues.has(grip)) gripValues.set(grip, new Set());
-              const gripSet = gripValues.get(grip)!;
-              for (const value of valuesMap.keys()) {
-                  gripSet.add(value);
-              }
-          }
+    const gripValues = new Map<Grip<any>, Set<any>>();
+    for (const query of partition) {
+      for (const [grip, valuesMap] of query.conditions.entries()) {
+        if (!gripValues.has(grip)) gripValues.set(grip, new Set());
+        const gripSet = gripValues.get(grip)!;
+        for (const value of valuesMap.keys()) {
+          gripSet.add(value);
+        }
       }
-      let complexity = 1;
-      for (const values of gripValues.values()) {
-          complexity *= values.size;
-          if (complexity > this.precomputationThreshold) return complexity; // Early exit
-      }
-      return complexity;
+    }
+    let complexity = 1;
+    for (const values of gripValues.values()) {
+      complexity *= values.size;
+      if (complexity > this.precomputationThreshold) return complexity; // Early exit
+    }
+    return complexity;
   }
 
   private precomputePartition(partition: Set<Query>): void {
-      const precomputedMap = new TupleMap<any[], Map<Tap | TapFactory, TapAttribution>>();
-      const grips = new Set<Grip<any>>();
+    const precomputedMap = new TupleMap<any[], Map<Tap | TapFactory, TapAttribution>>();
+    const grips = new Set<Grip<any>>();
+    for (const query of partition) {
+      query.conditions.forEach((_, grip) => grips.add(grip));
+    }
+
+    const gripArray = Array.from(grips).sort((a, b) => a.key.localeCompare(b.key));
+    this.partitionToKeyGrips.set(partition, gripArray);
+
+    const allGripValues = new Map<Grip<any>, any[]>();
+    for (const grip of gripArray) {
+      const values = new Set<any>();
       for (const query of partition) {
-          query.conditions.forEach((_, grip) => grips.add(grip));
+        query.conditions.get(grip)?.forEach((_, value) => values.add(value));
       }
-      
-      const gripArray = Array.from(grips).sort((a, b) => a.key.localeCompare(b.key));
-      this.partitionToKeyGrips.set(partition, gripArray);
+      allGripValues.set(grip, Array.from(values));
+    }
 
-      const allGripValues = new Map<Grip<any>, any[]>();
-      for (const grip of gripArray) {
-          const values = new Set<any>();
-          for (const query of partition) {
-              query.conditions.get(grip)?.forEach((_, value) => values.add(value));
-          }
-          allGripValues.set(grip, Array.from(values));
+    const generateCombinations = (index: number, currentCombination: [Grip<any>, any][]) => {
+      if (index === gripArray.length) {
+        const context = { getValue: (g: Grip<any>) => new Map(currentCombination).get(g) };
+        const key = gripArray.map((g) => context.getValue(g));
+        const matches = this.evaluateQueries(partition, context);
+        const attributed = this.attributionUtility.attribute(Array.from(matches.values()));
+        precomputedMap.set(key, attributed);
+        return;
       }
+      const grip = gripArray[index];
+      const values = allGripValues.get(grip) || [undefined];
+      for (const value of values) {
+        currentCombination.push([grip, value]);
+        generateCombinations(index + 1, currentCombination);
+        currentCombination.pop();
+      }
+    };
 
-      const generateCombinations = (index: number, currentCombination: [Grip<any>, any][]) => {
-          if (index === gripArray.length) {
-              const context = { getValue: (g: Grip<any>) => new Map(currentCombination).get(g) };
-              const key = gripArray.map(g => context.getValue(g));
-              const matches = this.evaluateQueries(partition, context);
-              const attributed = this.attributionUtility.attribute(Array.from(matches.values()));
-              precomputedMap.set(key, attributed);
-              return;
-          }
-          const grip = gripArray[index];
-          const values = allGripValues.get(grip) || [undefined];
-          for (const value of values) {
-              currentCombination.push([grip, value]);
-              generateCombinations(index + 1, currentCombination);
-              currentCombination.pop();
-          }
-      };
-      
-      generateCombinations(0, []);
-      this.precomputedMaps.set(partition, precomputedMap);
+    generateCombinations(0, []);
+    this.precomputedMaps.set(partition, precomputedMap);
   }
-
 
   /**
    * Evaluates a set of queries against a given context.
@@ -425,18 +430,18 @@ export class QueryEvaluator {
 
     const bindingsToEvaluate: QueryBinding[] = [];
     for (const binding of this.bindings.values()) {
-        if (queries.has(binding.query)) {
-            bindingsToEvaluate.push(binding);
-        }
+      if (queries.has(binding.query)) {
+        bindingsToEvaluate.push(binding);
+      }
     }
 
     for (const binding of bindingsToEvaluate) {
       let totalScore = 0;
-      
+
       if (binding.query.conditions.size === 0) {
         continue;
       }
-      
+
       let allConditionsMatch = true;
       for (const [grip, valuesAndScoresMap] of binding.query.conditions.entries()) {
         const currentValue = context.getValue(grip);
@@ -449,9 +454,9 @@ export class QueryEvaluator {
 
       if (allConditionsMatch) {
         newMatches.set(binding.id, {
-            tap: binding.tap,
-            score: binding.baseScore + totalScore,
-            bindingId: binding.id,
+          tap: binding.tap,
+          score: binding.baseScore + totalScore,
+          bindingId: binding.id,
         });
       }
     }
@@ -466,45 +471,49 @@ export class QueryEvaluator {
    */
   public onGripsChanged(changedGrips: Set<Grip<any>>, context: any): EvaluationDelta {
     const queriesToReevaluate = this.invertedIndex.getAffectedQueries(changedGrips);
-    
+
     for (const query of this.structurallyChangedQueries) {
-        queriesToReevaluate.add(query);
+      queriesToReevaluate.add(query);
     }
     this.structurallyChangedQueries.clear();
 
     // Update active matches based on the re-evaluated queries
     const newMatches = this.evaluateQueries(queriesToReevaluate, context);
     for (const query of queriesToReevaluate) {
-        const associatedBindings = Array.from(this.bindings.values()).filter(b => b.query === query);
-        for (const binding of associatedBindings) {
-            const newMatch = newMatches.get(binding.id);
-            const oldMatch = this.activeMatches.get(binding.id);
+      const associatedBindings = Array.from(this.bindings.values()).filter(
+        (b) => b.query === query,
+      );
+      for (const binding of associatedBindings) {
+        const newMatch = newMatches.get(binding.id);
+        const oldMatch = this.activeMatches.get(binding.id);
 
-            if (oldMatch && !newMatch) {
-                this.activeMatches.delete(binding.id);
-            } else if (newMatch) {
-                this.activeMatches.set(binding.id, newMatch);
-            }
+        if (oldMatch && !newMatch) {
+          this.activeMatches.delete(binding.id);
+        } else if (newMatch) {
+          this.activeMatches.set(binding.id, newMatch);
         }
+      }
     }
 
     // Now, run attribution on the complete, updated set of all active matches
     const allActiveMatches = Array.from(this.activeMatches.values());
-    
+
     let newResult: Map<Tap | TapFactory, TapAttribution>;
 
     if (this.useCache) {
-        const keyGrips = this.getAllInputGrips();
-        const key = Array.from(keyGrips).sort((a,b) => a.key.localeCompare(b.key)).map(g => context.getValue(g));
-        
-        if (this.cache.has(key)) {
-            newResult = this.cache.get(key)!;
-        } else {
-            newResult = this.attributionUtility.attribute(allActiveMatches);
-            this.cache.set(key, newResult);
-        }
-    } else {
+      const keyGrips = this.getAllInputGrips();
+      const key = Array.from(keyGrips)
+        .sort((a, b) => a.key.localeCompare(b.key))
+        .map((g) => context.getValue(g));
+
+      if (this.cache.has(key)) {
+        newResult = this.cache.get(key)!;
+      } else {
         newResult = this.attributionUtility.attribute(allActiveMatches);
+        this.cache.set(key, newResult);
+      }
+    } else {
+      newResult = this.attributionUtility.attribute(allActiveMatches);
     }
 
     // Calculate the delta
@@ -513,35 +522,35 @@ export class QueryEvaluator {
     const allTaps = new Set([...newResult.keys(), ...this.lastAttributedResult.keys()]);
 
     for (const tap of allTaps) {
-        const newAttr = newResult.get(tap);
-        const oldAttr = this.lastAttributedResult.get(tap);
+      const newAttr = newResult.get(tap);
+      const oldAttr = this.lastAttributedResult.get(tap);
 
-        if (newAttr && !oldAttr) {
-            added.set(tap, newAttr);
-        } else if (!newAttr && oldAttr) {
-            removed.set(tap, oldAttr);
-        } else if (newAttr && oldAttr) {
-            const newlyWonGrips = new Set<Grip<any>>();
-            for (const grip of newAttr.attributedGrips) {
-                if (!oldAttr.attributedGrips.has(grip)) {
-                    newlyWonGrips.add(grip);
-                }
-            }
-
-            const lostGrips = new Set<Grip<any>>();
-            for (const grip of oldAttr.attributedGrips) {
-                if (!newAttr.attributedGrips.has(grip)) {
-                    lostGrips.add(grip);
-                }
-            }
-
-            if (newlyWonGrips.size > 0) {
-                added.set(tap, { ...newAttr, attributedGrips: newlyWonGrips });
-            }
-            if (lostGrips.size > 0) {
-                removed.set(tap, { ...oldAttr, attributedGrips: lostGrips });
-            }
+      if (newAttr && !oldAttr) {
+        added.set(tap, newAttr);
+      } else if (!newAttr && oldAttr) {
+        removed.set(tap, oldAttr);
+      } else if (newAttr && oldAttr) {
+        const newlyWonGrips = new Set<Grip<any>>();
+        for (const grip of newAttr.attributedGrips) {
+          if (!oldAttr.attributedGrips.has(grip)) {
+            newlyWonGrips.add(grip);
+          }
         }
+
+        const lostGrips = new Set<Grip<any>>();
+        for (const grip of oldAttr.attributedGrips) {
+          if (!newAttr.attributedGrips.has(grip)) {
+            lostGrips.add(grip);
+          }
+        }
+
+        if (newlyWonGrips.size > 0) {
+          added.set(tap, { ...newAttr, attributedGrips: newlyWonGrips });
+        }
+        if (lostGrips.size > 0) {
+          removed.set(tap, { ...oldAttr, attributedGrips: lostGrips });
+        }
+      }
     }
 
     this.lastAttributedResult = newResult;

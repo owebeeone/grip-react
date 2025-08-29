@@ -11,10 +11,9 @@ type Override = { type: "value"; value: unknown } | { type: "drip"; drip: Drip<a
 // Common interface for context containers that can be used with useGrip and tap attachment
 export interface GripContextLike {
   getGripConsumerContext(): GripContext; // where useGrip should read from
-  getGripHomeContext(): GripContext;     // where taps should be attached by default
+  getGripHomeContext(): GripContext; // where taps should be attached by default
   getGrok(): Grok;
 }
-
 
 export class GripContext implements GripContextLike {
   readonly kind: "GripContext" = "GripContext";
@@ -51,7 +50,7 @@ export class GripContext implements GripContextLike {
   submitTask(callback: () => void, priority = 0): void {
     this.contextNode.submitTask(callback, priority);
   }
-  
+
   submitWeakTask(taskQueueCallback: () => void) {
     this.contextNode.submitWeakTask(taskQueueCallback);
   }
@@ -62,15 +61,19 @@ export class GripContext implements GripContextLike {
     if (!this.contextNode) {
       return [];
     }
-    return this.contextNode.get_parents_with_priority().map(p => ({
-      ctx: p.node.get_context()!,
-      priority: p.priority
-    })).filter(p => p.ctx != null);
+    return this.contextNode
+      .get_parents_with_priority()
+      .map((p) => ({
+        ctx: p.node.get_context()!,
+        priority: p.priority,
+      }))
+      .filter((p) => p.ctx != null);
   }
 
   addParent(parentCtxt: GripContextLike, priority = 0): this {
     const parent = parentCtxt.getGripHomeContext();
-    if (parent.contextNode.grok !== this.grok) throw new Error("Contexts must be attached to the same engine");
+    if (parent.contextNode.grok !== this.grok)
+      throw new Error("Contexts must be attached to the same engine");
     if (parent === this) throw new Error("Context cannot be its own parent");
 
     // All parent management is now done in GripContextNode
@@ -96,24 +99,34 @@ export class GripContext implements GripContextLike {
   }
 
   private hasAncestor(target: GripContext): boolean {
-    return this.contextNode.get_parent_nodes().some(
-      p => p.get_context() === target || p.get_context()?.hasAncestor(target) || false
-    );
+    return this.contextNode
+      .get_parent_nodes()
+      .some((p) => p.get_context() === target || p.get_context()?.hasAncestor(target) || false);
   }
 
   // Direct overrides are deprecated in taps-only design
-  setValue<T>(_grip: Grip<T>, _value: T): this { return this; }
-  setDrip<T>(_grip: Grip<T>, _drip: Drip<T>): this { return this; }
+  setValue<T>(_grip: Grip<T>, _value: T): this {
+    return this;
+  }
+  setDrip<T>(_grip: Grip<T>, _drip: Drip<T>): this {
+    return this;
+  }
 
   // Resolve a parameter (value or drip) following priority across parents
-  resolveOverride<T>(_grip: Grip<T>): Override | undefined { return undefined; }
-  resolveOverrideWithSource<T>(_grip: Grip<T>): { override: Override; source: GripContext } | undefined { return undefined; }
+  resolveOverride<T>(_grip: Grip<T>): Override | undefined {
+    return undefined;
+  }
+  resolveOverrideWithSource<T>(
+    _grip: Grip<T>,
+  ): { override: Override; source: GripContext } | undefined {
+    return undefined;
+  }
 
-	// Create a child context
-	createChild(opts?: { priority?: number}): GripContext {
-		const child = new GripContext(this.grok).addParent(this, opts?.priority ?? 0);
-		return child;
-	}
+  // Create a child context
+  createChild(opts?: { priority?: number }): GripContext {
+    const child = new GripContext(this.grok).addParent(this, opts?.priority ?? 0);
+    return child;
+  }
 
   getLiveDripForGrip<T>(grip: Grip<T>): Drip<T> | undefined {
     return this.contextNode.getLiveDripForGrip(grip);
@@ -123,15 +136,15 @@ export class GripContext implements GripContextLike {
     return this.contextNode.getOrCreateConsumer(grip);
   }
 
-	// --- App-facing helpers to manage taps without referencing the engine ---
-	registerTap(tap: Tap | TapFactory): void {
-		if (!this.grok) throw new Error("Context is not attached to an engine");
-		this.grok.registerTapAt(this, tap);
-	}
+  // --- App-facing helpers to manage taps without referencing the engine ---
+  registerTap(tap: Tap | TapFactory): void {
+    if (!this.grok) throw new Error("Context is not attached to an engine");
+    this.grok.registerTapAt(this, tap);
+  }
 
-	unregisterTap(tap: Tap): void {
-		this.grok.unregisterTap(tap);
-	}
+  unregisterTap(tap: Tap): void {
+    this.grok.unregisterTap(tap);
+  }
 
   unregisterSource(grip: Grip<any>): void {
     const node = this.contextNode;

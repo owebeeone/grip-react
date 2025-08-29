@@ -9,7 +9,7 @@ import type { GripContextLike } from "./context";
 // produce() returns a Drip for the requested Grip.
 // (MVP: single-output path; multi-output & feeders can come next.)
 export interface Tap {
-  readonly kind: 'Tap';
+  readonly kind: "Tap";
 
   provides: readonly Grip<any>[];
   // Parameters read from the destination context lineage (affect a single destination)
@@ -33,7 +33,7 @@ export interface Tap {
 
   // Produce for the current state. If destContext is provided, then only
   // provide the updates for the destination context provided.
-  produce(opts?: {destContext?: GripContext}): void;
+  produce(opts?: { destContext?: GripContext }): void;
 
   // A grip on an input parameter has changed.
   produceOnParams?(paramGrip: Grip<any>): void;
@@ -44,14 +44,14 @@ export interface Tap {
 
 /**
  * A factory for a Tap.
- * 
+ *
  * This is a lazy factory that is only instantiated if the query matches.
- * 
+ *
  * The Matcher will need to know what Grips the Tap provides so that it can
  * determine if the Tap will be selected.
  */
 export interface TapFactory {
-  readonly kind: 'TapFactory';
+  readonly kind: "TapFactory";
   label?: string;
   provides: readonly Grip<any>[];
   build(): Tap;
@@ -65,5 +65,9 @@ export interface ActivatableProducer {
 
 // Optional: richer Tap variant that can return a controller object alongside the drip
 export interface TapWithController<TDrip = any, TController = any> extends Tap {
-  produceWithController?<T>(grip: Grip<T>, ctx: GripContext, grok: Grok): { drip: Drip<T>; controller: TController };
+  produceWithController?<T>(
+    grip: Grip<T>,
+    ctx: GripContext,
+    grok: Grok,
+  ): { drip: Drip<T>; controller: TController };
 }

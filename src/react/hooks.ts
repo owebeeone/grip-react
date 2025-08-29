@@ -6,8 +6,6 @@ import { useRuntime } from "./provider";
 import { Tap } from "../core/tap";
 import { createAtomValueTap, AtomTap, AtomTapHandle } from "../core/atom_tap";
 
-
-
 // Overload 1: When initial value is provided and is non-nullable, return AtomTap with non-nullable type
 export function useAtomValueTap<TGrip>(
   grip: Grip<TGrip | undefined>,
@@ -15,17 +13,17 @@ export function useAtomValueTap<TGrip>(
     ctx?: GripContext;
     initial: NonNullable<TGrip>;
     tapGrip?: Grip<AtomTapHandle<NonNullable<TGrip>>>;
-  }
+  },
 ): AtomTap<NonNullable<TGrip>>;
 
-// Overload 2: Standard case - return AtomTap with original grip type  
+// Overload 2: Standard case - return AtomTap with original grip type
 export function useAtomValueTap<TGrip>(
   grip: Grip<TGrip>,
   opts?: {
     ctx?: GripContext;
     initial?: TGrip;
     tapGrip?: Grip<AtomTapHandle<TGrip>>;
-  }
+  },
 ): AtomTap<TGrip>;
 
 // Implementation
@@ -35,24 +33,24 @@ export function useAtomValueTap<TGrip>(
     ctx?: GripContext;
     initial?: TGrip;
     tapGrip?: Grip<AtomTapHandle<TGrip>>;
-  }
+  },
 ): AtomTap<TGrip> {
   const tap = useMemo(
     () => createAtomValueTap(grip, { initial: opts?.initial, handleGrip: opts?.tapGrip }),
-    [grip, opts?.initial, opts?.tapGrip]
+    [grip, opts?.initial, opts?.tapGrip],
   );
   useTap(() => tap, { ctx: opts?.ctx, deps: [tap] });
   const get = useCallback(() => tap, [tap]);
-  return useSyncExternalStore(
-    (notify) => (tap as any).subscribe(notify),
-    get, get
-  );
+  return useSyncExternalStore((notify) => (tap as any).subscribe(notify), get, get);
 }
 
 // useGrip(grip, [ctx]) -> value (reactive)
 export function useGrip<T>(grip: Grip<T>, ctx?: GripContext | GripContextLike): T | undefined {
   const { grok, context: providerCtx } = useRuntime();
-  const activeCtx = (ctx && (ctx as any).getGripConsumerContext) ? (ctx as GripContextLike).getGripConsumerContext() : (ctx as GripContext | undefined) ?? providerCtx;
+  const activeCtx =
+    ctx && (ctx as any).getGripConsumerContext
+      ? (ctx as GripContextLike).getGripConsumerContext()
+      : ((ctx as GripContext | undefined) ?? providerCtx);
 
   // Get (and memoize) the Drip for this grip+ctx
   const drip = useMemo(() => grok.query(grip, activeCtx), [grok, activeCtx, grip]);
@@ -63,20 +61,10 @@ export function useGrip<T>(grip: Grip<T>, ctx?: GripContext | GripContextLike): 
   return useSyncExternalStore(subscribe, get, get);
 }
 
-/**
- * useGrips is a shortcut for returning a destructure object of useGrip results.
- * 
- * Example:
- * const { value, value2 } = useGrips([VALUE, VALUE2]);
- */
-export function useGrips<T>(grips: Grip<T>[], ctx?: GripContext | GripContextLike): { [K in keyof T]: T[K] | undefined } {
-  const values = grips.map((grip) => useGrip(grip, ctx));
-  return null;
-}
 
 export function useTap(
   factory: () => Tap,
-  opts?: { ctx?: GripContext; deps?: React.DependencyList } // deps to control re-creation
+  opts?: { ctx?: GripContext; deps?: React.DependencyList }, // deps to control re-creation
 ): void {
   const { context: providerCtx } = useRuntime();
   const ctx = opts?.ctx ?? providerCtx;
@@ -84,7 +72,9 @@ export function useTap(
 
   useEffect(() => {
     ctx.getGripHomeContext().registerTap(tap);
-    return () => { ctx.getGripHomeContext().unregisterTap(tap); };
+    return () => {
+      ctx.getGripHomeContext().unregisterTap(tap);
+    };
   }, [ctx, tap]);
 }
 
@@ -98,12 +88,15 @@ export function useTap(
  */
 export function useGripSetter<T>(
   tapGrip: Grip<AtomTapHandle<T>>,
-  ctx?: GripContext | GripContextLike
+  ctx?: GripContext | GripContextLike,
 ): (v: T | undefined | ((prev: T | undefined) => T | undefined)) => void {
   const handle = useGrip(tapGrip, ctx);
-  return useCallback((v: T | undefined | ((prev: T | undefined) => T | undefined)) => {
-    (handle as any)?.set(v as any);
-  }, [handle]);
+  return useCallback(
+    (v: T | undefined | ((prev: T | undefined) => T | undefined)) => {
+      (handle as any)?.set(v as any);
+    },
+    [handle],
+  );
 }
 
 /**
@@ -117,7 +110,7 @@ export function useGripSetter<T>(
 export function useGripState<T>(
   grip: Grip<T>,
   tapGrip: Grip<AtomTapHandle<T>>,
-  ctx?: GripContext | GripContextLike
+  ctx?: GripContext | GripContextLike,
 ): [T | undefined, (v: T | undefined | ((prev: T | undefined) => T | undefined)) => void] {
   const value = useGrip(grip, ctx);
   const setValue = useGripSetter(tapGrip, ctx);
@@ -139,16 +132,22 @@ export function useTextGrip<T = string>(
     ctx?: GripContext | GripContextLike;
     parse?: (s: string) => T | undefined;
     format?: (v: T | undefined) => string;
-  }
-): { value: string; onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void } {
+  },
+): {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+} {
   const { ctx, parse, format } = opts ?? {};
   const value = useGrip(grip, ctx);
   const setValue = useGripSetter(tapGrip, ctx);
   const uiValue = (format ? format(value) : (value as unknown as string | undefined)) ?? "";
-  const onChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const s = e.target.value;
-    setValue(parse ? parse(s) : (s as unknown as T));
-  }, [setValue, parse]);
+  const onChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const s = e.target.value;
+      setValue(parse ? parse(s) : (s as unknown as T));
+    },
+    [setValue, parse],
+  );
   return { value: uiValue, onChange };
 }
 
@@ -169,29 +168,38 @@ export function useNumberGrip(
     clamp?: { min?: number; max?: number };
     parse?: (s: string) => number | undefined;
     format?: (v: number | undefined) => string;
-  }
+  },
 ): { value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void } {
   const { ctx, emptyAs, clamp, parse, format } = opts ?? {};
   const value = useGrip(grip, ctx);
   const setValue = useGripSetter(tapGrip, ctx);
-  const applyClamp = useCallback((n: number | undefined) => {
-    if (n == null) return n;
-    let x = n;
-    if (clamp?.min != null && x < clamp.min) x = clamp.min;
-    if (clamp?.max != null && x > clamp.max) x = clamp.max;
-    return x;
-  }, [clamp?.min, clamp?.max]);
-  const defaultParse = useCallback((s: string) => {
-    if (s === "") return emptyAs ?? undefined;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : emptyAs ?? undefined;
-  }, [emptyAs]);
-  const uiValue = format ? format(value) : (value == null ? "" : String(value));
-  const onChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const s = e.target.value;
-    const n = (parse ?? defaultParse)(s);
-    setValue(applyClamp(n));
-  }, [setValue, parse, defaultParse, applyClamp]);
+  const applyClamp = useCallback(
+    (n: number | undefined) => {
+      if (n == null) return n;
+      let x = n;
+      if (clamp?.min != null && x < clamp.min) x = clamp.min;
+      if (clamp?.max != null && x > clamp.max) x = clamp.max;
+      return x;
+    },
+    [clamp?.min, clamp?.max],
+  );
+  const defaultParse = useCallback(
+    (s: string) => {
+      if (s === "") return emptyAs ?? undefined;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : (emptyAs ?? undefined);
+    },
+    [emptyAs],
+  );
+  const uiValue = format ? format(value) : value == null ? "" : String(value);
+  const onChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const s = e.target.value;
+      const n = (parse ?? defaultParse)(s);
+      setValue(applyClamp(n));
+    },
+    [setValue, parse, defaultParse, applyClamp],
+  );
   return { value: uiValue, onChange };
 }
 
@@ -210,16 +218,19 @@ export function useSelectGrip<T = string>(
     ctx?: GripContext | GripContextLike;
     parse?: (s: string) => T | undefined;
     format?: (v: T | undefined) => string;
-  }
+  },
 ): { value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void } {
   const { ctx, parse, format } = opts ?? {};
   const value = useGrip(grip, ctx);
   const setValue = useGripSetter(tapGrip, ctx);
   const uiValue = (format ? format(value) : (value as unknown as string | undefined)) ?? "";
-  const onChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const s = e.target.value;
-    setValue(parse ? parse(s) : (s as unknown as T));
-  }, [setValue, parse]);
+  const onChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const s = e.target.value;
+      setValue(parse ? parse(s) : (s as unknown as T));
+    },
+    [setValue, parse],
+  );
   return { value: uiValue, onChange };
 }
 
@@ -241,22 +252,26 @@ export function useCheckboxGrip<T = boolean>(
     ctx?: GripContext | GripContextLike;
     trueValue?: T;
     falseValue?: T;
-  }
+  },
 ): { checked: boolean; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void } {
   const { ctx, trueValue, falseValue } = opts ?? {};
   const value = useGrip(grip, ctx);
   const setValue = useGripSetter(tapGrip, ctx);
-  const checked = trueValue !== undefined || falseValue !== undefined
-    ? value === trueValue
-    : Boolean(value as unknown as boolean);
-  const onChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const nextChecked = e.target.checked;
-    if (trueValue !== undefined || falseValue !== undefined) {
-      setValue(nextChecked ? (trueValue as T) : (falseValue as T));
-    } else {
-      setValue(nextChecked as unknown as T);
-    }
-  }, [setValue, trueValue, falseValue]);
+  const checked =
+    trueValue !== undefined || falseValue !== undefined
+      ? value === trueValue
+      : Boolean(value as unknown as boolean);
+  const onChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const nextChecked = e.target.checked;
+      if (trueValue !== undefined || falseValue !== undefined) {
+        setValue(nextChecked ? (trueValue as T) : (falseValue as T));
+      } else {
+        setValue(nextChecked as unknown as T);
+      }
+    },
+    [setValue, trueValue, falseValue],
+  );
   return { checked, onChange };
 }
 
@@ -274,7 +289,7 @@ export function useRadioGrip<T>(
   grip: Grip<T>,
   tapGrip: Grip<AtomTapHandle<T>>,
   optionValue: T,
-  opts?: { ctx?: GripContext | GripContextLike; toString?: (v: T) => string }
+  opts?: { ctx?: GripContext | GripContextLike; toString?: (v: T) => string },
 ): { checked: boolean; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void } {
   const { ctx, toString } = opts ?? {};
   const value = useGrip(grip, ctx);

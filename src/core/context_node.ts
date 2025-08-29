@@ -22,33 +22,33 @@ import { Tap } from "./tap";
 // The ContextNode is not a public API. It is used internally by the engine
 // to manage the graph.
 export interface GripContextNodeIf {
-    get_grok(): Grok;
-    get_context(): GripContext | undefined;  // undefined may mean the context has been GC'd
-    get_parent_nodes(): GripContextNode[];
-    get_parents_with_priority(): ReadonlyArray<{ node: GripContextNode; priority: number }>;
-    get_children_nodes(): GripContextNode[];
-    get_producers(): Map<Grip<any>, ProducerRecord>;
-    get_consumers(): Map<Grip<any>, WeakRef<Drip<any>>>;
-    getResolvedProviders(): Map<Grip<any>, GripContextNode>;
+  get_grok(): Grok;
+  get_context(): GripContext | undefined; // undefined may mean the context has been GC'd
+  get_parent_nodes(): GripContextNode[];
+  get_parents_with_priority(): ReadonlyArray<{ node: GripContextNode; priority: number }>;
+  get_children_nodes(): GripContextNode[];
+  get_producers(): Map<Grip<any>, ProducerRecord>;
+  get_consumers(): Map<Grip<any>, WeakRef<Drip<any>>>;
+  getResolvedProviders(): Map<Grip<any>, GripContextNode>;
 
-    addParent(parent: GripContextNode, priority?: number): void;
+  addParent(parent: GripContextNode, priority?: number): void;
 
-    recordProducer<T>(grip: Grip<T>, rec: ProducerRecord): void;
+  recordProducer<T>(grip: Grip<T>, rec: ProducerRecord): void;
 
-    setResolvedProvider<T>(grip: Grip<T>, node: GripContextNode): void;
+  setResolvedProvider<T>(grip: Grip<T>, node: GripContextNode): void;
 
-    // Returns the producer record for a given tap, creating it if it doesn't exist
-    getOrCreateProducerRecord(tap: Tap, outputs?: Iterable<Grip<any>>): ProducerRecord;
+  // Returns the producer record for a given tap, creating it if it doesn't exist
+  getOrCreateProducerRecord(tap: Tap, outputs?: Iterable<Grip<any>>): ProducerRecord;
 
-    // Record a consumer for a given grip.
-    recordConsumer<T>(grip: Grip<T>, drip: Drip<T>): void;
+  // Record a consumer for a given grip.
+  recordConsumer<T>(grip: Grip<T>, drip: Drip<T>): void;
 
-    // Returns the live drip instance for this grip at this destination context, if any
-    getLiveDripForGrip<T>(grip: Grip<T>): Drip<T> | undefined;
+  // Returns the live drip instance for this grip at this destination context, if any
+  getLiveDripForGrip<T>(grip: Grip<T>): Drip<T> | undefined;
 
-    // Notify the live consumer drip for a grip at this destination context
-    notifyConsumers<T>(grip: Grip<T>, value: T): number;
+  // Notify the live consumer drip for a grip at this destination context
+  notifyConsumers<T>(grip: Grip<T>, value: T): number;
 
-    touch(): void;
-    getLastSeen(): number;
+  touch(): void;
+  getLastSeen(): number;
 }

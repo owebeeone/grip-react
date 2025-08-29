@@ -31,11 +31,11 @@ function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
 
 /**
  * The Grok engine.
- * 
+ *
  * This is the main class for the the Grip system's engine.
  *
  * All related objects, Drips, Contexts, Taps, etc. have access to one Grok instance.
- * 
+ *
  */
 export class Grok {
   private graph = new GrokGraph(this);
@@ -51,18 +51,21 @@ export class Grok {
   constructor() {
     this.rootContext = new GripContext(this, "root");
     this.mainHomeContext = new GripContext(this, "main-home").addParent(this.rootContext, 0);
-    this.mainPresentationContext = new GripContext(this, "main-presentation").addParent(this.mainHomeContext, 0);
+    this.mainPresentationContext = new GripContext(this, "main-presentation").addParent(
+      this.mainHomeContext,
+      0,
+    );
     this.mainContext = new MatchingContext(this.mainHomeContext, this.mainPresentationContext);
   }
 
   hasCycle(newNode: GripContextNode): boolean {
     return this.graph.hasCycle(newNode);
   }
-  
+
   submitTask(callback: () => void, priority: number, handleHolder: TaskHandleHolder) {
     this.taskQueue.submit(callback, priority, handleHolder);
   }
-  
+
   submitWeakTask(taskQueueCallback: () => void, handleHolder: TaskHandleHolder) {
     this.taskQueue.submitWeak(taskQueueCallback, 0, handleHolder);
   }
@@ -95,8 +98,9 @@ export class Grok {
   }
 
   // Create a home context (optionally parented) and a presentation child context, returning a dual container
-  createDualContext(homeParent: GripContext,
-    opts?: { destPriority?: number;}
+  createDualContext(
+    homeParent: GripContext,
+    opts?: { destPriority?: number },
   ): DualContextContainer {
     const home = this.createContext(homeParent, 0);
     // Create presentation child off home
@@ -105,7 +109,6 @@ export class Grok {
     this.ensureNode(dest);
     return new DualContextContainer(home, dest);
   }
-
 
   registerTapAt(ctx: GripContextLike, tap: Tap | TapFactory): void {
     const homeCtx = ctx.getGripHomeContext();
@@ -147,13 +150,13 @@ export class Grok {
 
   // Central query API: component asks for a Grip from a Context => gets a Drip<T>
   query<T>(grip: Grip<T>, consumerCtx: GripContextLike): Drip<T> {
-
     const ctx = consumerCtx.getGripConsumerContext();
     const ctxNode = ctx.getGripConsumerContext()._getContextNode();
 
     var drip = ctxNode.getLiveDripForGrip(grip);
 
-    if (drip) { // Best case we have a live drip; ensure it's resolved to a producer
+    if (drip) {
+      // Best case we have a live drip; ensure it's resolved to a producer
       const hasProvider = ctxNode.getResolvedProviders().has(grip as unknown as Grip<any>);
       if (!hasProvider) {
         this.resolver.addConsumer(ctx, grip as unknown as Grip<any>);
@@ -182,7 +185,7 @@ export class Grok {
   //   const visited = new Set<GripContext>();
   //   // See if we can resolve the consumer by looking at parents.
   //   if(this.resolveConsumerStage1(dest, source, grip, visited, roots)) return;
-  
+
   //   // If we didn't find a producer in the current context, then we need to
   //   // check the roots encountered as we treat roots as a last resort.
   //   var dummyRoots = Array<GripContext>();
@@ -208,9 +211,9 @@ export class Grok {
   // }
 
   // resolveConsumerStage1(
-  //   dest: GripContext, 
-  //   source: GripContext, 
-  //   grip: Grip<any>, 
+  //   dest: GripContext,
+  //   source: GripContext,
+  //   grip: Grip<any>,
   //   visited: Set<GripContext>,
   //   roots: GripContext[]): boolean {
   //   // Check to see if the current context has a tap that provides this grip.
@@ -292,12 +295,11 @@ export class Grok {
     return this.graph.snapshot();
   }
 
-  getGraphSanityCheck(): 
-    {
-      nodes: ReadonlyMap<string, GripContextNode>, 
-      missingNodes: ReadonlySet<GripContextNode>,
-      nodesNotReaped: ReadonlySet<GripContextNode>,
-    } {
+  getGraphSanityCheck(): {
+    nodes: ReadonlyMap<string, GripContextNode>;
+    missingNodes: ReadonlySet<GripContextNode>;
+    nodesNotReaped: ReadonlySet<GripContextNode>;
+  } {
     return this.graph.snapshotSanityCheck();
   }
 }

@@ -6,19 +6,19 @@ import type { Tap } from "./tap";
 import type { GripContextNode, Destination, ProducerRecord, DestinationParams } from "./graph";
 import { consola } from "consola";
 
-const logger = consola.withTag('core/base_tap.ts');
+const logger = consola.withTag("core/base_tap.ts");
 
 // Base implementation that manages lifecycle and home/destination bookkeeping
 export abstract class BaseTap implements Tap {
-  readonly kind: 'Tap' = 'Tap';
+  readonly kind: "Tap" = "Tap";
   readonly id: string = `tap_${Math.random().toString(36).substr(2, 9)}`;
 
   protected engine?: Grok;
-  readonly provides: readonly Grip<any>[];  // Grips this tap publishes.
-  readonly destinationParamGrips?: readonly Grip<any>[];  // Grips this tap reads from the destination context.
-  readonly homeParamGrips?: readonly Grip<any>[];  // Grips this tap reads from the paramsContext.
-  protected homeContext?: GripContext;   // The context that this tap publishes to.
-  protected paramsContext?: GripContext;  // The context that provides incoming parameters.
+  readonly provides: readonly Grip<any>[]; // Grips this tap publishes.
+  readonly destinationParamGrips?: readonly Grip<any>[]; // Grips this tap reads from the destination context.
+  readonly homeParamGrips?: readonly Grip<any>[]; // Grips this tap reads from the paramsContext.
+  protected homeContext?: GripContext; // The context that this tap publishes to.
+  protected paramsContext?: GripContext; // The context that provides incoming parameters.
   protected paramDrips: Map<Grip<any>, Drip<any>> = new Map();
   protected paramDripsSubs: Map<Grip<any>, Unsubscribe> = new Map();
   protected producer?: ProducerRecord;
@@ -43,21 +43,20 @@ export abstract class BaseTap implements Tap {
         }
       }
     }
-
   }
 
   getHomeContext(): GripContext | undefined {
     return this.homeContext;
   }
-  
+
   getParamsContext(): GripContext | undefined {
     return this.paramsContext;
   }
 
   // Called when the tap is attached to a home context.
   onAttach(home: GripContext | GripContextLike): void {
-    var realHome : GripContext;
-    var paramContext : GripContext;
+    var realHome: GripContext;
+    var paramContext: GripContext;
     if ((home as any).getGripHomeContext) {
       const contextLike = home as GripContextLike;
       realHome = contextLike.getGripHomeContext();
@@ -68,12 +67,15 @@ export abstract class BaseTap implements Tap {
     }
     this.homeContext = realHome;
     this.paramsContext = paramContext;
-    
+
     // Get or create a ProducerRecord for this tap at the home node
     // This will return the existing one if it was already created by applyProducerDelta
     const homeNode = this.homeContext._getContextNode();
     this.producer = homeNode.getOrCreateProducerRecord(this as unknown as Tap, this.provides);
-    if (process.env.NODE_ENV !== 'production') logger.log(`[BaseTap] onAttach: ${this.constructor.name} (id=${this.id}) attached to ${realHome.id}, producer has ${this.producer.getDestinations().size} destinations`);
+    if (process.env.NODE_ENV !== "production")
+      logger.log(
+        `[BaseTap] onAttach: ${this.constructor.name} (id=${this.id}) attached to ${realHome.id}, producer has ${this.producer.getDestinations().size} destinations`,
+      );
 
     // Record this producer under each provided grip for visibility/resolution
     // (This may be redundant if already done by applyProducerDelta, but it's safe to do again)
@@ -94,7 +96,7 @@ export abstract class BaseTap implements Tap {
     // Destination param subscriptions are handled per-destination in Destination.registerDestinationParamDrips().
     if (!this.paramsContext || !this.homeParamGrips || this.homeParamGrips.length === 0) return;
 
-    this.delayedUpdates = true;  // Delay updates while we subscribe to the incoming parameter drips.
+    this.delayedUpdates = true; // Delay updates while we subscribe to the incoming parameter drips.
     const self = this;
 
     for (const paramGrip of this.homeParamGrips) {
@@ -120,7 +122,9 @@ export abstract class BaseTap implements Tap {
     this.producer = undefined;
     // Clean up any home/params subscriptions
     for (const unsub of this.paramDripsSubs.values()) {
-      try { unsub(); } catch {}
+      try {
+        unsub();
+      } catch {}
     }
     this.paramDripsSubs.clear();
     this.paramDrips.clear();
@@ -176,7 +180,7 @@ export abstract class BaseTap implements Tap {
       // If the tap isn't fully attached yet, treat as no-op publish.
       return 0;
     }
-    
+
     var destinations: Destination[] = [];
     if (target) {
       const destNode = target._getContextNode();
@@ -206,35 +210,31 @@ export abstract class BaseTap implements Tap {
 
   // Produce for the current state. If destContext is provided, then only
   // provide the updates for the destination context provided.
-  abstract produce(opts?: {destContext?: GripContext}): void;
+  abstract produce(opts?: { destContext?: GripContext }): void;
 
   // A grip on an input parameter has changed.
   abstract produceOnParams?(paramGrip: Grip<any>): void;
 
   // A grip on a destination parameter has changed.
   abstract produceOnDestParams?(destContext: GripContext | undefined, paramGrip: Grip<any>): void;
-  
+
   // Protected helper to get destination params
   protected getDestinationParams(destContext: GripContext): DestinationParams | undefined {
     return this.producer?.getDestinationParams(destContext);
   }
 }
 
-
 /**
  * Base tap that doesn't have any parameters.
  */
 export abstract class BaseTapNoParams extends BaseTap {
-
-  constructor(opts: {
-    provides: readonly Grip<any>[];
-  }) {
-    super({provides: opts.provides});
+  constructor(opts: { provides: readonly Grip<any>[] }) {
+    super({ provides: opts.provides });
   }
-  
+
   // Produce for the current state. If destContext is provided, then only
   // provide the updates for the destination context provided.
-  abstract produce(opts?: {destContext?: GripContext}): void;
+  abstract produce(opts?: { destContext?: GripContext }): void;
 
   produceOnParams?(paramGrip: Grip<any>): void {
     throw new Error("Method not implemented.");

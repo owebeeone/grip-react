@@ -1,3 +1,4 @@
+
 export interface CacheEntry<T> {
   value: T;
   expiresAt: number;
@@ -45,7 +46,9 @@ export class LruTtlCache<K, V> implements AsyncCache<K, V> {
     this.map.delete(key);
   }
 
-  size(): number { return this.map.size; }
+  size(): number {
+    return this.map.size;
+  }
 
   private evictIfNeeded(): void {
     if (this.map.size <= this.maxEntries) return;
@@ -58,5 +61,3 @@ export class LruTtlCache<K, V> implements AsyncCache<K, V> {
     }
   }
 }
-
-

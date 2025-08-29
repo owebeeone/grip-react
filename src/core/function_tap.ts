@@ -10,18 +10,24 @@ export type Values<R extends GripRecord> = R[keyof R];
 
 export interface FunctionTapHandle<StateRec extends GripRecord> {
   getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined;
-  setState: <K extends keyof StateRec>(grip: StateRec[K], value: GripValue<StateRec[K]> | undefined) => void;
+  setState: <K extends keyof StateRec>(
+    grip: StateRec[K],
+    value: GripValue<StateRec[K]> | undefined,
+  ) => void;
 }
 
 export type ComputeFn<
   Outs extends GripRecord,
   Home extends GripRecord,
   Dest extends GripRecord,
-  StateRec extends GripRecord
+  StateRec extends GripRecord,
 > = (args: {
   dest?: GripContext;
   getHomeParam: <K extends keyof Home>(grip: Home[K]) => GripValue<Home[K]> | undefined;
-  getDestParam: <K extends keyof Dest>(grip: Dest[K], dest?: GripContext) => GripValue<Dest[K]> | undefined;
+  getDestParam: <K extends keyof Dest>(
+    grip: Dest[K],
+    dest?: GripContext,
+  ) => GripValue<Dest[K]> | undefined;
   getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined;
 }) => Map<Values<Outs>, GripValue<Values<Outs>>>;
 
@@ -29,7 +35,7 @@ export interface FunctionTapConfig<
   Outs extends GripRecord,
   Home extends GripRecord = {},
   Dest extends GripRecord = {},
-  StateRec extends GripRecord = {}
+  StateRec extends GripRecord = {},
 > {
   provides: ReadonlyArray<Values<Outs>>;
   destinationParamGrips?: ReadonlyArray<Values<Dest>>;
@@ -45,11 +51,14 @@ export interface FunctionTapConfig<
  * subscribed parameter or local state changes.
  */
 export class FunctionTap<
-  Outs extends GripRecord,
-  Home extends GripRecord = {},
-  Dest extends GripRecord = {},
-  StateRec extends GripRecord = {}
-> extends BaseTap implements FunctionTapHandle<StateRec> {
+    Outs extends GripRecord,
+    Home extends GripRecord = {},
+    Dest extends GripRecord = {},
+    StateRec extends GripRecord = {},
+  >
+  extends BaseTap
+  implements FunctionTapHandle<StateRec>
+{
   protected readonly computeFn: ComputeFn<Outs, Home, Dest, StateRec>;
   readonly handleGrip?: Grip<FunctionTapHandle<StateRec>>;
   readonly state = new Map<Grip<any>, any>();
@@ -58,7 +67,9 @@ export class FunctionTap<
 
   constructor(config: FunctionTapConfig<Outs, Home, Dest, StateRec>) {
     super({
-      provides: (config.handleGrip ? [...config.provides, config.handleGrip] : config.provides) as unknown as readonly Grip<any>[],
+      provides: (config.handleGrip
+        ? [...config.provides, config.handleGrip]
+        : config.provides) as unknown as readonly Grip<any>[],
       destinationParamGrips: config.destinationParamGrips as unknown as readonly Grip<any>[],
       homeParamGrips: config.homeParamGrips as unknown as readonly Grip<any>[],
     });
@@ -73,8 +84,13 @@ export class FunctionTap<
   }
 
   // Handle API
-  getState<K extends keyof StateRec>(grip: StateRec[K]): GripValue<StateRec[K]> | undefined { return this.state.get(grip as unknown as Grip<any>) as GripValue<StateRec[K]> | undefined; }
-  setState<K extends keyof StateRec>(grip: StateRec[K], value: GripValue<StateRec[K]> | undefined): void {
+  getState<K extends keyof StateRec>(grip: StateRec[K]): GripValue<StateRec[K]> | undefined {
+    return this.state.get(grip as unknown as Grip<any>) as GripValue<StateRec[K]> | undefined;
+  }
+  setState<K extends keyof StateRec>(
+    grip: StateRec[K],
+    value: GripValue<StateRec[K]> | undefined,
+  ): void {
     const prev = this.state.get(grip as unknown as Grip<any>);
     if (prev === value) return;
     this.state.set(grip as unknown as Grip<any>, value);
@@ -108,9 +124,16 @@ export class FunctionTap<
   }
 
   private computeFor(dest?: GripContext): Map<Grip<any>, any> {
-    const getHomeParam = <K extends keyof Home>(g: Home[K]) => this.homeContext?.getOrCreateConsumer(g as unknown as Grip<any>).get() as GripValue<Home[K]> | undefined;
-    const getDestParam = <K extends keyof Dest>(g: Dest[K], d?: GripContext) => (d ?? dest ?? this.homeContext)?.getOrCreateConsumer(g as unknown as Grip<any>).get() as GripValue<Dest[K]> | undefined;
-    const getState = <K extends keyof StateRec>(g: StateRec[K]) => this.state.get(g as unknown as Grip<any>) as GripValue<StateRec[K]> | undefined;
+    const getHomeParam = <K extends keyof Home>(g: Home[K]) =>
+      this.homeContext?.getOrCreateConsumer(g as unknown as Grip<any>).get() as
+        | GripValue<Home[K]>
+        | undefined;
+    const getDestParam = <K extends keyof Dest>(g: Dest[K], d?: GripContext) =>
+      (d ?? dest ?? this.homeContext)?.getOrCreateConsumer(g as unknown as Grip<any>).get() as
+        | GripValue<Dest[K]>
+        | undefined;
+    const getState = <K extends keyof StateRec>(g: StateRec[K]) =>
+      this.state.get(g as unknown as Grip<any>) as GripValue<StateRec[K]> | undefined;
     const typedResult = this.computeFn({ dest, getHomeParam, getDestParam, getState });
     const result = new Map<Grip<any>, any>();
     for (const [grip, value] of typedResult) {
@@ -155,9 +178,7 @@ export function createFunctionTap<
   Outs extends GripRecord,
   Home extends GripRecord = {},
   Dest extends GripRecord = {},
-  StateRec extends GripRecord = {}
+  StateRec extends GripRecord = {},
 >(config: FunctionTapConfig<Outs, Home, Dest, StateRec>): FunctionTap<Outs, Home, Dest, StateRec> {
   return new FunctionTap<Outs, Home, Dest, StateRec>(config);
 }
-
-

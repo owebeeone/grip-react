@@ -22,7 +22,7 @@ export class AtomValueTap<T> extends BaseTapNoParams implements AtomTap<T>, Tap 
   private listeners = new Set<() => void>();
 
   constructor(grip: Grip<T>, initial: T | undefined, opts?: { handleGrip?: Grip<any> }) {
-    super({ provides: (opts?.handleGrip ? [grip, opts.handleGrip] : [grip]) });
+    super({ provides: opts?.handleGrip ? [grip, opts.handleGrip] : [grip] });
     this.valueGrip = grip;
     this.handleGrip = opts?.handleGrip;
     this.currentValue = initial;
@@ -43,9 +43,10 @@ export class AtomValueTap<T> extends BaseTapNoParams implements AtomTap<T>, Tap 
   set(next: T | undefined): void;
   set(updater: (prev: T | undefined) => T | undefined): void;
   set(nextOrUpdater: T | undefined | ((prev: T | undefined) => T | undefined)): void {
-    const nextValue = typeof nextOrUpdater === "function"
-      ? (nextOrUpdater as (p: T | undefined) => T | undefined)(this.currentValue)
-      : nextOrUpdater;
+    const nextValue =
+      typeof nextOrUpdater === "function"
+        ? (nextOrUpdater as (p: T | undefined) => T | undefined)(this.currentValue)
+        : nextOrUpdater;
     if (this.currentValue !== nextValue) {
       this.currentValue = nextValue;
       this.produce();
@@ -66,19 +67,19 @@ export class AtomValueTap<T> extends BaseTapNoParams implements AtomTap<T>, Tap 
 // Overload 1: When initial value is provided and is non-nullable, return AtomValueTap with non-nullable type
 export function createAtomValueTap<T>(
   grip: Grip<T | undefined>,
-  opts: { initial: NonNullable<T>; handleGrip?: Grip<any> }
+  opts: { initial: NonNullable<T>; handleGrip?: Grip<any> },
 ): AtomValueTap<NonNullable<T>>;
 
 // Overload 2: Standard case - return AtomValueTap with original grip type
 export function createAtomValueTap<T>(
   grip: Grip<T>,
-  opts?: { initial?: T; handleGrip?: Grip<any> }
+  opts?: { initial?: T; handleGrip?: Grip<any> },
 ): AtomValueTap<T>;
 
 // Implementation
 export function createAtomValueTap<T>(
   grip: Grip<T>,
-  opts?: { initial?: T; handleGrip?: Grip<any> }
+  opts?: { initial?: T; handleGrip?: Grip<any> },
 ): AtomValueTap<T> {
   const tap: AtomValueTap<T> = new AtomValueTap<T>(grip, opts?.initial ?? grip.defaultValue, opts);
   return tap as any;
@@ -93,20 +94,26 @@ export type Values<R extends GripRecord> = R[keyof R];
 export interface MultiAtomTapHandle<Outs extends GripRecord = any> {
   get: <K extends keyof Outs>(grip: Outs[K]) => GripValue<Outs[K]> | undefined;
   set<K extends keyof Outs>(grip: Outs[K], next: GripValue<Outs[K]> | undefined): void;
-  set<K extends keyof Outs>(grip: Outs[K], updater: (prev: GripValue<Outs[K]> | undefined) => GripValue<Outs[K]> | undefined): void;
+  set<K extends keyof Outs>(
+    grip: Outs[K],
+    updater: (prev: GripValue<Outs[K]> | undefined) => GripValue<Outs[K]> | undefined,
+  ): void;
   // Sets a raw value without treating functions as updater lambdas (useful for function-valued grips)
   setValue<K extends keyof Outs>(grip: Outs[K], value: GripValue<Outs[K]> | undefined): void;
   setAll(values: Map<Values<Outs>, GripValue<Values<Outs>> | undefined>): void;
   setAll(
     updater: (
-      current: ReadonlyMap<Values<Outs>, GripValue<Values<Outs>> | undefined>
-    ) => Map<Values<Outs>, GripValue<Values<Outs>> | undefined>
+      current: ReadonlyMap<Values<Outs>, GripValue<Values<Outs>> | undefined>,
+    ) => Map<Values<Outs>, GripValue<Values<Outs>> | undefined>,
   ): void;
 }
 
 export type MultiAtomTap<Outs extends GripRecord = any> = MultiAtomTapHandle<Outs>;
 
-export class MultiAtomValueTap<Outs extends GripRecord = any> extends BaseTapNoParams implements MultiAtomTap<Outs>, Tap {
+export class MultiAtomValueTap<Outs extends GripRecord = any>
+  extends BaseTapNoParams
+  implements MultiAtomTap<Outs>, Tap
+{
   private readonly values = new Map<Values<Outs>, GripValue<Values<Outs>> | undefined>();
   private readonly valueGrips: ReadonlyArray<Values<Outs>>;
   private readonly handleGrip?: Grip<MultiAtomTapHandle<Outs>>;
@@ -122,9 +129,11 @@ export class MultiAtomValueTap<Outs extends GripRecord = any> extends BaseTapNoP
   constructor(
     grips: ReadonlyArray<Values<Outs>>,
     gripsMap: Map<Values<Outs>, GripValue<Values<Outs>> | undefined> | undefined,
-    opts?: { handleGrip?: Grip<MultiAtomTapHandle<Outs>> }
+    opts?: { handleGrip?: Grip<MultiAtomTapHandle<Outs>> },
   ) {
-    const providesList = (opts?.handleGrip ? [...grips, opts.handleGrip] : grips) as unknown as readonly Grip<any>[];
+    const providesList = (opts?.handleGrip
+      ? [...grips, opts.handleGrip]
+      : grips) as unknown as readonly Grip<any>[];
     super({ provides: providesList });
     this.valueGrips = grips;
     this.handleGrip = opts?.handleGrip as unknown as Grip<MultiAtomTapHandle<Outs>> | undefined;
@@ -147,20 +156,24 @@ export class MultiAtomValueTap<Outs extends GripRecord = any> extends BaseTapNoP
   setAll(values: Map<Values<Outs>, GripValue<Values<Outs>> | undefined>): void;
   setAll(
     updater: (
-      current: ReadonlyMap<Values<Outs>, GripValue<Values<Outs>> | undefined>
-    ) => Map<Values<Outs>, GripValue<Values<Outs>> | undefined>
+      current: ReadonlyMap<Values<Outs>, GripValue<Values<Outs>> | undefined>,
+    ) => Map<Values<Outs>, GripValue<Values<Outs>> | undefined>,
   ): void;
   setAll(
     valuesOrUpdater:
       | Map<Values<Outs>, GripValue<Values<Outs>> | undefined>
-      | ((current: ReadonlyMap<Values<Outs>, GripValue<Values<Outs>> | undefined>) => Map<Values<Outs>, GripValue<Values<Outs>> | undefined>)
+      | ((
+          current: ReadonlyMap<Values<Outs>, GripValue<Values<Outs>> | undefined>,
+        ) => Map<Values<Outs>, GripValue<Values<Outs>> | undefined>),
   ): void {
-    const nextMap = typeof valuesOrUpdater === "function"
-      ? valuesOrUpdater(this.values)
-      : valuesOrUpdater;
+    const nextMap =
+      typeof valuesOrUpdater === "function" ? valuesOrUpdater(this.values) : valuesOrUpdater;
 
     for (const [g] of nextMap) {
-      if (this.handleGrip && (g as unknown as Grip<any>) === (this.handleGrip as unknown as Grip<any>)) {
+      if (
+        this.handleGrip &&
+        (g as unknown as Grip<any>) === (this.handleGrip as unknown as Grip<any>)
+      ) {
         throw new Error("Cannot set the self/handle grip value via setAll");
       }
       if (!this.values.has(g)) {
@@ -184,7 +197,10 @@ export class MultiAtomValueTap<Outs extends GripRecord = any> extends BaseTapNoP
   produce(opts?: { destContext?: GripContext; changed?: Grip<any> | Grip<any>[] }) {
     const updates = new Map<Grip<any>, any>();
     const changedArray = Array.isArray(opts?.changed)
-      ? (opts?.changed as Grip<any>[]) : (opts?.changed ? [opts.changed] : undefined);
+      ? (opts?.changed as Grip<any>[])
+      : opts?.changed
+        ? [opts.changed]
+        : undefined;
     if (changedArray?.length) {
       for (const g of changedArray) {
         updates.set(g as unknown as Grip<any>, this.values.get(g as unknown as Values<Outs>));
@@ -193,7 +209,8 @@ export class MultiAtomValueTap<Outs extends GripRecord = any> extends BaseTapNoP
       for (const g of this.valueGrips) {
         updates.set(g as unknown as Grip<any>, this.values.get(g));
       }
-      if (this.handleGrip) updates.set(this.handleGrip as unknown as Grip<any>, this as MultiAtomTap<Outs>);
+      if (this.handleGrip)
+        updates.set(this.handleGrip as unknown as Grip<any>, this as MultiAtomTap<Outs>);
     }
     this.publish(updates, opts?.destContext);
   }
@@ -203,9 +220,21 @@ export class MultiAtomValueTap<Outs extends GripRecord = any> extends BaseTapNoP
   }
 
   set<K extends keyof Outs>(grip: Outs[K], next: GripValue<Outs[K]> | undefined): void;
-  set<K extends keyof Outs>(grip: Outs[K], updater: (prev: GripValue<Outs[K]> | undefined) => GripValue<Outs[K]> | undefined): void;
-  set<K extends keyof Outs>(grip: Outs[K], nextOrUpdater: GripValue<Outs[K]> | undefined | ((prev: GripValue<Outs[K]> | undefined) => GripValue<Outs[K]> | undefined)): void {
-    if (this.handleGrip && (grip as unknown as Grip<any>) === (this.handleGrip as unknown as Grip<any>)) {
+  set<K extends keyof Outs>(
+    grip: Outs[K],
+    updater: (prev: GripValue<Outs[K]> | undefined) => GripValue<Outs[K]> | undefined,
+  ): void;
+  set<K extends keyof Outs>(
+    grip: Outs[K],
+    nextOrUpdater:
+      | GripValue<Outs[K]>
+      | undefined
+      | ((prev: GripValue<Outs[K]> | undefined) => GripValue<Outs[K]> | undefined),
+  ): void {
+    if (
+      this.handleGrip &&
+      (grip as unknown as Grip<any>) === (this.handleGrip as unknown as Grip<any>)
+    ) {
       throw new Error("Cannot set the self/handle grip value");
     }
     if (!this.values.has(grip as unknown as Values<Outs>)) {
@@ -213,9 +242,12 @@ export class MultiAtomValueTap<Outs extends GripRecord = any> extends BaseTapNoP
     }
     const key = grip as unknown as Values<Outs>;
     const prev = this.values.get(key) as GripValue<Outs[K]> | undefined;
-    const nextValue = typeof nextOrUpdater === "function"
-      ? (nextOrUpdater as (p: GripValue<Outs[K]> | undefined) => GripValue<Outs[K]> | undefined)(prev)
-      : (nextOrUpdater as GripValue<Outs[K]> | undefined);
+    const nextValue =
+      typeof nextOrUpdater === "function"
+        ? (nextOrUpdater as (p: GripValue<Outs[K]> | undefined) => GripValue<Outs[K]> | undefined)(
+            prev,
+          )
+        : (nextOrUpdater as GripValue<Outs[K]> | undefined);
     if (prev !== nextValue) {
       this.values.set(key, nextValue);
       this.produce({ changed: grip as unknown as Grip<any> });
@@ -223,7 +255,10 @@ export class MultiAtomValueTap<Outs extends GripRecord = any> extends BaseTapNoP
   }
 
   setValue<K extends keyof Outs>(grip: Outs[K], value: GripValue<Outs[K]> | undefined): void {
-    if (this.handleGrip && (grip as unknown as Grip<any>) === (this.handleGrip as unknown as Grip<any>)) {
+    if (
+      this.handleGrip &&
+      (grip as unknown as Grip<any>) === (this.handleGrip as unknown as Grip<any>)
+    ) {
       throw new Error("Cannot set the self/handle grip value");
     }
     if (!this.values.has(grip as unknown as Values<Outs>)) {
@@ -253,9 +288,10 @@ export function createMultiAtomValueTap<Outs extends GripRecord>(config: {
   gripMap?: Map<Values<Outs>, GripValue<Values<Outs>> | undefined>;
   handleGrip?: Grip<MultiAtomTapHandle<Outs>>;
 }): MultiAtomValueTap<Outs> {
-  const resolvedGrips: ReadonlyArray<Values<Outs>> = config.grips ?? Array.from(config.gripMap?.keys() ?? []);
-  const tap = new MultiAtomValueTap<Outs>(resolvedGrips, config.gripMap, { handleGrip: config.handleGrip });
+  const resolvedGrips: ReadonlyArray<Values<Outs>> =
+    config.grips ?? Array.from(config.gripMap?.keys() ?? []);
+  const tap = new MultiAtomValueTap<Outs>(resolvedGrips, config.gripMap, {
+    handleGrip: config.handleGrip,
+  });
   return tap;
 }
-
-

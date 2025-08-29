@@ -1,7 +1,7 @@
-import type { Grip } from './grip';
-import type { Tap } from './tap';
+import type { Grip } from "./grip";
+import type { Tap } from "./tap";
 
-export type QueryMatchScoreMap = ReadonlyMap<any, number>;  // match value -> score 
+export type QueryMatchScoreMap = ReadonlyMap<any, number>; // match value -> score
 export type QueryConditions = ReadonlyMap<Grip<any>, QueryMatchScoreMap>;
 
 type MutableQueryMatchScoreMap = Map<any, number>;
@@ -20,7 +20,7 @@ export class Query {
  * QueryBuilder is a fluent builder for Query.
  * It only supports equality and inclusion conditions. Inclusion basically
  * results in multiple query expressions and "or"ed together.
- * 
+ *
  * Why the limitation? Performance. The query evaluator is optimized to allow
  * for large numbers of query expressions that evaluate in constant time. If you
  * need more complex conditions, you can provide a function tap the supplies
@@ -28,11 +28,7 @@ export class Query {
  */
 export interface QueryBuilder {
   oneOf<T>(grip: Grip<T>, value: T, score?: number): QueryBuilder;
-  anyOf<T>(
-    grip: Grip<T>,
-    values: readonly T[],
-    score?: number,
-  ): QueryBuilder;
+  anyOf<T>(grip: Grip<T>, values: readonly T[], score?: number): QueryBuilder;
 
   /** finalize */
   build(): Query;
@@ -67,8 +63,8 @@ class QueryBuilderImpl implements QueryBuilder {
   anyOf<T>(grip: Grip<T>, values: readonly T[], score?: number): this {
     this.copyOnWrite();
     if (!this.conditions.has(grip)) {
-        const newMatchScoreMap = new Map<any, number>() as MutableQueryMatchScoreMap;
-        this.conditions.set(grip, newMatchScoreMap);
+      const newMatchScoreMap = new Map<any, number>() as MutableQueryMatchScoreMap;
+      this.conditions.set(grip, newMatchScoreMap);
     }
     const valuesAndScoresMap = this.conditions.get(grip)!;
     const scoreToUse = score ?? 100;
@@ -94,18 +90,10 @@ export class QueryBuilderFactory {
 }
 
 /** Helpers */
-export const withOneOf = <T>(
-  grip: Grip<T>,
-  value: T,
-  score?: number,
-): QueryBuilder => {
+export const withOneOf = <T>(grip: Grip<T>, value: T, score?: number): QueryBuilder => {
   return new QueryBuilderFactory().newQuery().oneOf(grip, value, score);
 };
 
-export const withAnyOf = <T>(
-  grip: Grip<T>,
-  values: readonly T[],
-  score?: number,
-): QueryBuilder => {
+export const withAnyOf = <T>(grip: Grip<T>, values: readonly T[], score?: number): QueryBuilder => {
   return new QueryBuilderFactory().newQuery().anyOf(grip, values, score);
 };

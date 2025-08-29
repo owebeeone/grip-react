@@ -1,10 +1,8 @@
 import { GripContext, GripContextLike } from "./context";
 import { Grok } from "./grok";
 
-
 // Dual-context container: home (inputs/params) and presentation (outputs)
 export class DualContextContainer implements GripContextLike {
-
   readonly kind: "DualContextContainer" = "DualContextContainer";
   readonly grok: Grok;
   readonly home: GripContext;
@@ -16,9 +14,13 @@ export class DualContextContainer implements GripContextLike {
     this.grok = home.getGrok();
   }
 
-  getGripConsumerContext(): GripContext { return this.presentation; }
-  getGripHomeContext(): GripContext { return this.home; }
-  getGrok(): Grok { return this.grok; }
+  getGripConsumerContext(): GripContext {
+    return this.presentation;
+  }
+  getGripHomeContext(): GripContext {
+    return this.home;
+  }
+  getGrok(): Grok {
+    return this.grok;
+  }
 }
-
-
