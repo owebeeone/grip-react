@@ -13,7 +13,7 @@ describe('Engine publish()', () => {
     const defineGrip = GripOf(registry);
     const OUT = defineGrip<number>('Pub.Out2', 0);
     const grok = new Grok();
-    const home = grok.mainContext;
+    const home = grok.mainPresentationContext;
     const A = home.createChild();
     const B = home.createChild();
 
@@ -42,7 +42,7 @@ describe('Engine publish()', () => {
     const G2 = defineGrip<number>('Pub.G2', 2);
     const HANDLE = defineGrip<MultiAtomTap>('Pub.Handle');
     const grok = new Grok();
-    const home = grok.mainContext;
+    const home = grok.mainPresentationContext;
     const D = home.createChild();
 
     const tap1 = createMultiAtomValueTap({gripMap: new Map([[G1, 1], [G2, 2]]), handleGrip: HANDLE});

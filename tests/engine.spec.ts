@@ -15,7 +15,7 @@ describe('Engine shared drip semantics', () => {
     const defineGrip = GripOf(registry);
     const VALUE = defineGrip<number>('Value', 0);
     const grok = new Grok();
-    const ctx = grok.mainContext.createChild();
+    const ctx = grok.mainHomeContext.createChild();
     const tap = createAtomValueTap(VALUE, { initial: 42 }) as unknown as Tap;
     grok.registerTap(tap);
     const d1 = grok.query(VALUE, ctx);
@@ -26,7 +26,7 @@ describe('Engine shared drip semantics', () => {
 
   it('drip supports multiple subscribers and onFirst/onZero fire appropriately', () => {
     const grok = new Grok();
-    const d = new Drip<number>(grok.mainContext, 1);
+    const d = new Drip<number>(grok.mainHomeContext, 1);
     let first = 0;
     let zero = 0;
     d.addOnFirstSubscriber(() => { first += 1; });
@@ -53,7 +53,7 @@ describe('Engine parameter-driven updates', () => {
     const PARAM = defineGrip<string>('Param', 'A');
     const OUT = defineGrip<number>('Out', 0);
     const grok = new Grok();
-    const ctx = grok.mainContext.createChild();
+    const ctx = grok.mainHomeContext.createChild();
     // Producer that depends on PARAM using BaseTap's destinationParamGrips
     class ParamOutTap extends BaseTap implements Tap {
       private readonly outGrip: Grip<number>;
@@ -104,7 +104,7 @@ describe('Engine add/remove live taps', () => {
     const defineGrip = GripOf(registry);
     const OUT = defineGrip<number>('Out', 33);
     const grok = new Grok();
-    const A = grok.mainContext.createChild();
+    const A = grok.mainHomeContext.createChild();
     const B = A.createChild();
 
     const dA = grok.query(OUT, A);
@@ -187,7 +187,7 @@ describe('Engine add/remove live taps', () => {
     const defineGrip = GripOf(registry);
     const OUT = defineGrip<number>('Out', 44);
     const grok = new Grok();
-    const A = grok.mainContext.createChild();
+    const A = grok.mainHomeContext.createChild();
     const B = A.createChild();
 
     const tap1 = createAtomValueTap(OUT, { initial: 111 }) as unknown as Tap;
@@ -216,7 +216,7 @@ describe('Engine add/remove live taps', () => {
     const defineGrip = GripOf(registry);
     const OUT = defineGrip<number>('Out', 0);
     const grok = new Grok();
-    const A = grok.mainContext.createChild();
+    const A = grok.mainHomeContext.createChild();
     const B = A.createChild();
 
     // Two taps with same grip; we will register at different contexts

@@ -41,7 +41,7 @@ describe('TapMatcher', () => {
 
   beforeEach(() => {
     grok = new Grok();
-    container = grok.createDualContext(grok.mainContext);
+    container = grok.createDualContext(grok.mainPresentationContext);
     matcher = new TapMatcher(container);
 
     // Spy on applyAttributionDelta to check its output without a full implementation
@@ -85,14 +85,16 @@ describe('TapMatcher', () => {
     grok.flush();
     expect(applyDeltaSpy).toHaveBeenCalledTimes(1);
 
-    // Remove the binding. This also removes the subscription.
+    // Remove the binding. This should trigger an evaluation to remove the attribution.
     matcher.removeBinding('A');
+    grok.flush();
+    expect(applyDeltaSpy).toHaveBeenCalledTimes(2);
 
     // Change the input again. This should NOT trigger a new evaluation
     // because the matcher is no longer subscribed to the MODE grip.
     modeController.set('off');
     grok.flush();
-    expect(applyDeltaSpy).toHaveBeenCalledTimes(1); // The count should not increase
+    expect(applyDeltaSpy).toHaveBeenCalledTimes(2); // The count should not increase
   });
 
   it('should handle partition merging and splitting via attribution changes', () => {

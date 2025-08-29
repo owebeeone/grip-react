@@ -55,17 +55,6 @@ export class Grok {
     this.mainContext = new MatchingContext(this.mainHomeContext, this.mainPresentationContext);
   }
 
-  // Resets the Grok instance to its initial state for testing purposes.
-  reset(): void {
-    // Clear all existing nodes in the graph
-    this.graph.clearNodes();
-
-    // Re-initialize root and main contexts
-    (this as any).rootContext = new GripContext(this, "root");
-    (this as any).mainContext = new GripContext(this, "main").addParent(this.rootContext, 0);
-
-  }
-
   hasCycle(newNode: GripContextNode): boolean {
     return this.graph.hasCycle(newNode);
   }

@@ -21,7 +21,9 @@ export interface DestinationParams {
   
   // Specific accessors when needed
   getDestParam<T>(grip: Grip<T>): T | undefined;
+  getAllDestParams(): ReadonlyMap<Grip<any>, any>;
   getHomeParam<T>(grip: Grip<T>): T | undefined;
+  getAllHomeParams(): ReadonlyMap<Grip<any>, any>;
 }
 
 export class ProducerRecord {
@@ -130,7 +132,7 @@ export class ProducerRecord {
     // Find the destination for this context
     for (const [destNode, destination] of this.destinations) {
       if (destNode.get_context() === destContext) {
-        return destination.getParams();
+        return destination;
       }
     }
     return undefined;
@@ -177,7 +179,7 @@ export class ProducerRecord {
 
 // Destination caches the visibility state for a provider at a destination context
 // as well as manages any destination param drips that are needed for the provider.
-export class Destination {
+export class Destination implements DestinationParams {
   private readonly destContextNode: GripContextNode;
   private readonly grips: Set<Grip<any>>;
   private readonly tap: Tap;
@@ -318,29 +320,12 @@ export class Destination {
     return this.destContextNode
   }
 
-  /**
-   * Get a comprehensive params object for this destination.
-   */
-  getParams(): DestinationParams {
-    const destCtx = this.destContextNode.get_context();
-    if (!destCtx) throw new Error("Destination context is gone");
-    return new DestinationParamsImpl(
-      destCtx,
-      this.destinationParamDrips,
-      this.producer,
-      this.tap
-    );
+  // DestinationParams implementation
+  get destContext(): GripContext {
+    const ctx = this.destContextNode.get_context();
+    if (!ctx) throw new Error("Destination context is gone");
+    return ctx;
   }
-}
-
-// Internal implementation of DestinationParams
-class DestinationParamsImpl implements DestinationParams {
-  constructor(
-    readonly destContext: GripContext,
-    private destDrips: Map<Grip<any>, Drip<any>>,
-    private producer: ProducerRecord,
-    private tap: Tap
-  ) {}
   
   // Combined getter - checks destination params first, then home params
   get<T>(grip: Grip<T>): T | undefined {
@@ -370,7 +355,7 @@ class DestinationParamsImpl implements DestinationParams {
     }
     
     // Override with dest params (higher priority)
-    for (const [g, d] of this.destDrips) {
+    for (const [g, d] of this.destinationParamDrips) {
       const value = d.get();
       if (value !== undefined) {
         map.set(g, value);
@@ -386,8 +371,19 @@ class DestinationParamsImpl implements DestinationParams {
   }
   
   getDestParam<T>(grip: Grip<T>): T | undefined {
-    const d = this.destDrips.get(grip as unknown as Grip<any>);
+    const d = this.destinationParamDrips.get(grip as unknown as Grip<any>);
     return d?.get() as T | undefined;
+  }
+  
+  getAllDestParams(): ReadonlyMap<Grip<any>, any> {
+    const map = new Map();
+    for (const [g, d] of this.destinationParamDrips) {
+      const value = d.get();
+      if (value !== undefined) {
+        map.set(g, value);
+      }
+    }
+    return map;
   }
   
   getHomeParam<T>(grip: Grip<T>): T | undefined {
@@ -399,8 +395,24 @@ class DestinationParamsImpl implements DestinationParams {
     return drip.get();
   }
   
+  getAllHomeParams(): ReadonlyMap<Grip<any>, any> {
+    const map = new Map();
+    const homeContext = this.tap.getHomeContext?.();
+    if (homeContext && this.tap.homeParamGrips) {
+      const paramContext = this.tap.getParamsContext?.() || homeContext;
+      for (const grip of this.tap.homeParamGrips) {
+        const drip = paramContext.getOrCreateConsumer(grip);
+        const value = drip.get();
+        if (value !== undefined) {
+          map.set(grip, value);
+        }
+      }
+    }
+    return map;
+  }
+  
   private hasDestParam(grip: Grip<any>): boolean {
-    return this.destDrips.has(grip);
+    return this.destinationParamDrips.has(grip);
   }
   
   private hasHomeParam(grip: Grip<any>): boolean {
@@ -782,10 +794,6 @@ export class GrokGraph {
     }
 
     return {nodes: allNodes, missingNodes: missingNodes, nodesNotReaped: nodesNotReaped};
-  }
-
-  clearNodes(): void {
-    this.nodes.clear();
   }
 
   // Notify all live consumers for a grip in a destination context

@@ -20,7 +20,7 @@ describe('Async Tap basics', () => {
     const PARAM = defineGrip<number>('Param', 0);
     const OUT = defineGrip<number>('Out', 0);
     const grok = new Grok();
-    const ctx = grok.mainContext.createChild();
+    const ctx = grok.mainPresentationContext.createChild();
 
     // Simple param handle
     const paramHandle = (await import('../src/core/atom_tap')).createAtomValueTap(PARAM, { initial: 1 }) as unknown as Tap;
@@ -30,9 +30,9 @@ describe('Async Tap basics', () => {
     const tap = createAsyncValueTap<number>({
       provides: OUT as Grip<number>,
       destinationParamGrips: [PARAM],
-      requestKeyOf: (dest) => String(dest.getOrCreateConsumer(PARAM).get()),
+      requestKeyOf: (dest) => String(dest.get(PARAM)),
       fetcher: async (dest, signal) => {
-        const n = dest.getOrCreateConsumer(PARAM).get() ?? 0;
+        const n = dest.get(PARAM) ?? 0;
         // Larger n sleeps longer => older request will finish later when param changes quickly
         await sleep(50 * n, signal);
         return n * 10;
@@ -66,7 +66,7 @@ describe('Async Tap basics', () => {
     const OUT2 = defineGrip<string>('Out2', '');
     const STATE_X = defineGrip<number>('StateX', 1);
     const grok = new Grok();
-    const ctx = grok.mainContext.createChild();
+    const ctx = grok.mainPresentationContext.createChild();
 
     const paramHandle = (await import('../src/core/atom_tap')).createAtomValueTap(PARAM, { initial: 'A' }) as unknown as Tap;
     grok.registerTap(paramHandle);
@@ -76,9 +76,9 @@ describe('Async Tap basics', () => {
       destinationParamGrips: [PARAM],
       handleGrip: undefined,
       initialState: [[STATE_X as any, 2]],
-      requestKeyOf: (dest, getState) => dest.getOrCreateConsumer(PARAM).get()?.toLowerCase() + ':' + String(getState(STATE_X as any) ?? ''),
+      requestKeyOf: (dest, getState) => dest.get(PARAM)?.toLowerCase() + ':' + String(getState(STATE_X as any) ?? ''),
       fetcher: async (dest, signal, getState) => {
-        const p = dest.getOrCreateConsumer(PARAM).get() ?? 'A';
+        const p = dest.get(PARAM) ?? 'A';
         await sleep(20, signal);
         const mult = (getState(STATE_X as any) ?? 1) as number;
         return { x: p.length * mult, y: (p + p) };

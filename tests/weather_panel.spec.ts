@@ -15,7 +15,7 @@ describe('WeatherPanel-style multi-context, multi-parent with independent simple
     const grok = new Grok();
 
     // Build DAG: A (root child), B (parent A), C (parent A)
-    const A = grok.mainContext.createChild();
+    const A = grok.mainPresentationContext.createChild();
     const B = A.createChild();
     const C = A.createChild();
 

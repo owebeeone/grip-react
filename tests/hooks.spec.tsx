@@ -79,7 +79,7 @@ describe('react hooks', () => {
 
     expect(result.current).toBe('A');
 
-    const node = grok.ensureNode(grok.mainContext);
+    const node = grok.mainHomeContext._getContextNode();
     const rec = Array.from(node.producerByTap.values())[0];
     const tapInstance = (rec as any).tap as any;
     tapInstance.set('B');

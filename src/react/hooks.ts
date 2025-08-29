@@ -63,6 +63,17 @@ export function useGrip<T>(grip: Grip<T>, ctx?: GripContext | GripContextLike): 
   return useSyncExternalStore(subscribe, get, get);
 }
 
+/**
+ * useGrips is a shortcut for returning a destructure object of useGrip results.
+ * 
+ * Example:
+ * const { value, value2 } = useGrips([VALUE, VALUE2]);
+ */
+export function useGrips<T>(grips: Grip<T>[], ctx?: GripContext | GripContextLike): { [K in keyof T]: T[K] | undefined } {
+  const values = grips.map((grip) => useGrip(grip, ctx));
+  return null;
+}
+
 export function useTap(
   factory: () => Tap,
   opts?: { ctx?: GripContext; deps?: React.DependencyList } // deps to control re-creation

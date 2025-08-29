@@ -78,10 +78,12 @@ export class TapMatcher {
     }
 
     const result: RemoveBindingResult = this.evaluator.removeBinding(bindingId);
-    result.removedInputs.forEach(grip => this._unsubscribeFromGrip(grip));
-
+    
     // Schedule an immediate evaluation to update the state after removal
+    // Do this BEFORE unsubscribing so the evaluation can still access the grip values
     this.container.getGripHomeContext().submitTask(() => this._evaluate(), 100);
+    
+    result.removedInputs.forEach(grip => this._unsubscribeFromGrip(grip));
   }
 
   /**

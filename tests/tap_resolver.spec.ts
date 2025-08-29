@@ -24,17 +24,16 @@ describe('SimpleResolver', () => {
         grok = new Grok(); // Instantiate Grok first (resolver is optional in constructor)
         resolver = new SimpleResolver(grok); // Instantiate SimpleResolver with grok
         (grok as any).resolver = resolver; // Assign the resolver back to grok
-        grok.reset(); // Reset the graph and contexts for each test
     });
 
     const getResolvedContextId = (consumer: GripContext, grip: Grip<any>): string | undefined => {
-        const consumerNode = grok.ensureNode(consumer);
+        const consumerNode = consumer._getContextNode();
         const producerNode = consumerNode.getResolvedProviders().get(grip);
         return producerNode?.get_context()?.id;
     };
 
     const getResolvedTap = (consumer: GripContext, grip: Grip<any>): Tap | undefined => {
-        const consumerNode = grok.ensureNode(consumer);
+        const consumerNode = consumer._getContextNode();
         const producerNode = consumerNode.getResolvedProviders().get(grip);
         const producerRecord = producerNode?.get_producers().get(grip);
         return producerRecord?.tap;
@@ -109,7 +108,7 @@ describe('SimpleResolver', () => {
         addConsumer(cc, gripA);
         expect(getResolvedContextId(cc, gripA)).toBe(ca.id);
         cc.addParent(cb, 0); // Add higher-priority parent
-        resolver.addParent(cc, cb);
+        resolver.addParent(cc, cb); // Notify resolver of parent change
         expect(getResolvedContextId(cc, gripA)).toBe(cb.id);
     });
 
@@ -251,6 +250,7 @@ describe('SimpleResolver', () => {
             };
 
             resolver.applyProducerDelta(context, delta);
+            grok.flush();
 
             addConsumer(consumer, gripA);
             expect(getResolvedContextId(consumer, gripA)).toBe(context.id);
@@ -274,6 +274,7 @@ describe('SimpleResolver', () => {
             };
 
             resolver.applyProducerDelta(context, delta);
+            grok.flush();
             expect(getResolvedContextId(consumer, gripA)).toBeUndefined();
         });
 
@@ -310,6 +311,7 @@ describe('SimpleResolver', () => {
             };
             
             resolver.applyProducerDelta(context, delta);
+            grok.flush();
 
             // Verify final state
             expect(getResolvedTap(consumer, gripA)).toBe(tapA); // Unchanged
@@ -359,9 +361,9 @@ describe('SimpleResolver', () => {
             const controlGrip = new Grip<string>({ name: 'control' });
 
             // Taps
-            const tapA = new MultiAtomValueTap([gripA, gripM], new Map([[gripA, 'valA'], [gripM, 'valA']]));
-            const tapB = new MultiAtomValueTap([gripB, gripN], new Map([[gripB, 'valB'], [gripN, 'valB']]));
-            const tapC = new MultiAtomValueTap([gripM, gripN], new Map([[gripM, 'valC'], [gripN, 'valC']]));
+            const tapA = new MultiAtomValueTap([gripA, gripM], new Map([[gripA, 'valA'], [gripM, 'valM']]));
+            const tapB = new MultiAtomValueTap([gripB, gripN], new Map([[gripB, 'valB'], [gripN, 'valN']]));
+            const tapC = new MultiAtomValueTap([gripM, gripN], new Map([[gripM, 'valM'], [gripN, 'valN']]));
 
             // Queries
             const q_base = qb().oneOf(controlGrip, 'base', 10).build();
@@ -382,6 +384,7 @@ describe('SimpleResolver', () => {
             
             const initialDelta = evaluator.onGripsChanged(new Set([controlGrip]), ctxWith([[controlGrip, 'base']]));
             resolver.applyProducerDelta(context, initialDelta);
+            grok.flush();
 
             expect(getResolvedTap(consumer, gripA)).toBe(tapA);
             expect(getResolvedTap(consumer, gripM)).toBe(tapA);
@@ -394,6 +397,7 @@ describe('SimpleResolver', () => {
             
             // This is the real test: apply the transfer delta
             resolver.applyProducerDelta(context, transferDelta);
+            grok.flush();
             
             // 3. Assert the final state after transfer
             expect(getResolvedTap(consumer, gripA)).toBeUndefined(); // tapA is no longer active

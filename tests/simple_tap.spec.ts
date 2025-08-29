@@ -12,7 +12,7 @@ describe('AtomTap', () => {
     const VALUE_TAP = defineGrip<AtomTap<string>>('ValueTap', undefined as any);
 
     const grok = new Grok();
-    const home = grok.mainContext;
+    const home = grok.mainPresentationContext;
     const destA = home.createChild();
     const destB = home.createChild();
 
@@ -43,7 +43,7 @@ describe('AtomTap', () => {
     const VALUE_TAP = defineGrip<AtomTap<string>>('Scoped.ValueTap', undefined as any);
 
     const grok = new Grok();
-    const homeRoot = grok.mainContext;
+    const homeRoot = grok.mainHomeContext;
     const homeChild = homeRoot.createChild();
 
     const tapRoot = createAtomValueTap(VALUE, { initial: 'R', handleGrip: VALUE_TAP });

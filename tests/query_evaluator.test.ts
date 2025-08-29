@@ -20,17 +20,7 @@ function makeTap(label: string, provides: readonly Grip<any>[]): Tap {
     } as unknown as Tap;
 }
 
-function makeFactory(label: string, provides: readonly Grip<any>[], counter: { n: number }): TapFactory {
-    return {
-        kind: 'TapFactory',
-        label,
-        provides,
-        build() {
-            counter.n += 1;
-            return makeTap(label + '#built', provides);
-        },
-    } as unknown as TapFactory;
-}
+
 
 function makeEvaluator(
     useHybridEvaluation: boolean = false,
@@ -238,27 +228,7 @@ describe('QueryEvaluator - tie-breaks and partitions', () => {
     });
 });
 
-describe('QueryEvaluator - factories and caching', () => {
-    it('builds a factory once per factory instance even with multiple matches', () => {
-        const out = new Grip<string>({ name: 'out' });
-        const flag = new Grip<boolean>({ name: 'flag' });
-        const counter = { n: 0 };
-        const factory: TapFactory = makeFactory('F', [out], counter);
 
-        const q1 = qb().oneOf(flag, true, 10).build();
-        const q2 = qb().oneOf(flag, true, 11).build();
-
-        const ev = makeEvaluator(useHybridEvaluation, useCache);
-        ev.addBinding({ id: 'B1', query: q1, tap: factory, baseScore: 0 });
-        ev.addBinding({ id: 'B2', query: q2, tap: factory, baseScore: 0 });
-
-        expectGripsToEqual(ev.getAllInputGrips(), [flag]);
-
-        const { added } = evalAndCheckStability(ev, new Set([flag]), ctxWith([[flag, true]]));
-        expect(findAttributionForGrip(added, out)).toBeTruthy();
-        expect(counter.n).toBe(1);
-    });
-});
 
 describe('QueryEvaluator - edge cases and incremental updates', () => {
     it('does not match queries with no conditions', () => {

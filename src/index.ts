@@ -22,7 +22,7 @@ export { GraphDumpButton } from "./react/GraphDumpButton";
 export { GripGraphDumper, GraphDumpKeyRegistry } from "./core/graph_dump";
 export { LruTtlCache } from "./core/async_cache";
 export { createDebouncer } from "./core/debounce";
-export { BaseAsyncTap, createAsyncValueTap, createAsyncMultiTap } from "./core/async_tap";
+export { BaseAsyncTap, createAsyncValueTap, createAsyncMultiTap, createAsyncHomeValueTap, createAsyncHomeMultiTap } from "./core/async_tap";
 export * from "./react/provider";
 export * from "./react/hooks";
 export { withOneOf, withAnyOf, Query, QueryBuilderFactory } from "./core/query";

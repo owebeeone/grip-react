@@ -271,6 +271,14 @@ export interface AsyncValueTapConfig<T> extends BaseAsyncTapOptions {
   fetcher: (params: DestinationParams, signal: AbortSignal) => Promise<T>;
 }
 
+// Variant for taps that only need home parameters (same for all destinations)
+export interface AsyncHomeValueTapConfig<T> extends BaseAsyncTapOptions {
+  provides: Grip<T>;
+  homeParamGrips?: readonly Grip<any>[];
+  requestKeyOf: (homeParams: ReadonlyMap<Grip<any>, any>) => string | undefined;
+  fetcher: (homeParams: ReadonlyMap<Grip<any>, any>, signal: AbortSignal) => Promise<T>;
+}
+
 class SingleOutputAsyncTap<T> extends BaseAsyncTap {
   private readonly out: Grip<T>;
   private readonly keyOf: (params: DestinationParams) => string | undefined;
@@ -300,6 +308,45 @@ export function createAsyncValueTap<T>(cfg: AsyncValueTapConfig<T>): Tap {
   return new SingleOutputAsyncTap<T>(cfg) as unknown as Tap;
 }
 
+// Home-only variant
+class SingleOutputHomeAsyncTap<T> extends BaseAsyncTap {
+  private readonly out: Grip<T>;
+  private readonly keyOf: (homeParams: ReadonlyMap<Grip<any>, any>) => string | undefined;
+  private readonly fetcher: (homeParams: ReadonlyMap<Grip<any>, any>, signal: AbortSignal) => Promise<T>;
+  
+  constructor(cfg: AsyncHomeValueTapConfig<T>) {
+    super({ provides: [cfg.provides], homeParamGrips: cfg.homeParamGrips, async: cfg });
+    this.out = cfg.provides;
+    this.keyOf = cfg.requestKeyOf;
+    this.fetcher = cfg.fetcher;
+  }
+  
+  protected getRequestKey(params: DestinationParams): string | undefined { 
+    return this.keyOf(params.getAllHomeParams()); 
+  }
+  
+  protected buildRequest(params: DestinationParams, signal: AbortSignal): Promise<unknown> { 
+    return this.fetcher(params.getAllHomeParams(), signal); 
+  }
+  
+  protected mapResultToUpdates(_params: DestinationParams, result: unknown): Map<Grip<any>, any> {
+    const updates = new Map<Grip<any>, any>();
+    updates.set(this.out as unknown as Grip<any>, result as T);
+    return updates;
+  }
+  
+  protected getResetUpdates(_params: DestinationParams): Map<Grip<any>, any> {
+    const updates = new Map<Grip<any>, any>();
+    updates.set(this.out as unknown as Grip<any>, undefined as unknown as T);
+    return updates;
+  }
+}
+
+export function createAsyncHomeValueTap<T>(cfg: AsyncHomeValueTapConfig<T>): Tap {
+  // Do not leak class type; return as Tap
+  return new SingleOutputHomeAsyncTap<T>(cfg) as unknown as Tap;
+}
+
 // Multi-output async tap
 export interface AsyncMultiTapConfig<Outs extends GripRecord, R = unknown, StateRec extends GripRecord = {}> extends BaseAsyncTapOptions {
   provides: ReadonlyArray<Values<Outs>>;
@@ -318,6 +365,28 @@ export interface AsyncMultiTapConfig<Outs extends GripRecord, R = unknown, State
   ) => Promise<R>;
   mapResult: (
     params: DestinationParams,
+    result: R,
+    getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
+  ) => ReadonlyMap<Values<Outs>, GripValue<Values<Outs>>>;
+}
+
+// Variant for multi-taps that only need home parameters (same for all destinations)
+export interface AsyncHomeMultiTapConfig<Outs extends GripRecord, R = unknown, StateRec extends GripRecord = {}> extends BaseAsyncTapOptions {
+  provides: ReadonlyArray<Values<Outs>>;
+  homeParamGrips?: readonly Grip<any>[];
+  handleGrip?: Grip<FunctionTapHandle<StateRec>>;
+  initialState?: ReadonlyArray<[Grip<any>, any]> | ReadonlyMap<Grip<any>, any>;
+  requestKeyOf: (
+    homeParams: ReadonlyMap<Grip<any>, any>,
+    getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
+  ) => string | undefined;
+  fetcher: (
+    homeParams: ReadonlyMap<Grip<any>, any>,
+    signal: AbortSignal,
+    getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
+  ) => Promise<R>;
+  mapResult: (
+    homeParams: ReadonlyMap<Grip<any>, any>,
     result: R,
     getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
   ) => ReadonlyMap<Values<Outs>, GripValue<Values<Outs>>>;
@@ -390,6 +459,88 @@ class MultiOutputAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecor
 
 export function createAsyncMultiTap<Outs extends GripRecord, R = unknown, StateRec extends GripRecord = {}>(cfg: AsyncMultiTapConfig<Outs, R, StateRec>): Tap {
   return new MultiOutputAsyncTap<Outs, R, StateRec>(cfg) as unknown as Tap;
+}
+
+// Home-only multi-tap variant
+class MultiOutputHomeAsyncTap<Outs extends GripRecord, R, StateRec extends GripRecord>
+  extends BaseAsyncTap implements FunctionTapHandle<StateRec> {
+  private readonly outs: ReadonlyArray<Values<Outs>>;
+  private readonly keyOf: (
+    homeParams: ReadonlyMap<Grip<any>, any>,
+    getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
+  ) => string | undefined;
+  private readonly fetcher: (
+    homeParams: ReadonlyMap<Grip<any>, any>,
+    signal: AbortSignal,
+    getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
+  ) => Promise<R>;
+  private readonly mapper: (
+    homeParams: ReadonlyMap<Grip<any>, any>,
+    result: R,
+    getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined
+  ) => ReadonlyMap<Values<Outs>, GripValue<Values<Outs>>>;
+  readonly handleGrip?: Grip<FunctionTapHandle<StateRec>>;
+  readonly state = new Map<Grip<any>, any>();
+  
+  constructor(cfg: AsyncHomeMultiTapConfig<Outs, R, StateRec>) {
+    const providesList = (cfg.handleGrip ? [...cfg.provides, cfg.handleGrip] : cfg.provides) as unknown as readonly Grip<any>[];
+    super({ provides: providesList, homeParamGrips: cfg.homeParamGrips, async: cfg });
+    this.outs = cfg.provides;
+    this.keyOf = cfg.requestKeyOf;
+    this.fetcher = cfg.fetcher;
+    this.mapper = cfg.mapResult;
+    this.handleGrip = cfg.handleGrip as unknown as Grip<FunctionTapHandle<StateRec>> | undefined;
+    if (cfg.initialState) {
+      const it = Array.isArray(cfg.initialState) ? cfg.initialState : Array.from((cfg.initialState as ReadonlyMap<Grip<any>, any>).entries());
+      for (const [g, v] of it) this.state.set(g, v);
+    }
+  }
+  
+  protected getRequestKey(params: DestinationParams): string | undefined { 
+    return this.keyOf(params.getAllHomeParams(), this.getState.bind(this) as any); 
+  }
+  
+  protected buildRequest(params: DestinationParams, signal: AbortSignal): Promise<unknown> { 
+    return this.fetcher(params.getAllHomeParams(), signal, this.getState.bind(this) as any); 
+  }
+  
+  protected mapResultToUpdates(params: DestinationParams, result: unknown): Map<Grip<any>, any> {
+    const typed = this.mapper(params.getAllHomeParams(), result as R, this.getState.bind(this) as any);
+    const updates = new Map<Grip<any>, any>();
+    for (const [g, v] of typed as ReadonlyMap<any, any>) {
+      updates.set(g as unknown as Grip<any>, v);
+    }
+    if (this.handleGrip) {
+      updates.set(this.handleGrip as unknown as Grip<any>, this as unknown as FunctionTapHandle<StateRec>);
+    }
+    return updates;
+  }
+  
+  protected getResetUpdates(_params: DestinationParams): Map<Grip<any>, any> {
+    const updates = new Map<Grip<any>, any>();
+    for (const g of this.outs) {
+      updates.set(g as unknown as Grip<any>, undefined);
+    }
+    // Do not touch handleGrip on reset
+    return updates;
+  }
+  
+  getState<K extends keyof StateRec>(grip: StateRec[K]): GripValue<StateRec[K]> | undefined {
+    return this.state.get(grip as unknown as Grip<any>) as GripValue<StateRec[K]> | undefined;
+  }
+  
+  setState<K extends keyof StateRec>(grip: StateRec[K], value: GripValue<StateRec[K]> | undefined): void {
+    const prev = this.state.get(grip as unknown as Grip<any>);
+    if (prev === value) return;
+    this.state.set(grip as unknown as Grip<any>, value);
+    // Recompute for all destinations (will abort inflight and reuse cache if present)
+    this.produce();
+  }
+}
+
+export function createAsyncHomeMultiTap<Outs extends GripRecord, R = unknown, StateRec extends GripRecord = {}>(cfg: AsyncHomeMultiTapConfig<Outs, R, StateRec>): Tap {
+  // Do not leak class type; return as Tap
+  return new MultiOutputHomeAsyncTap<Outs, R, StateRec>(cfg) as unknown as Tap;
 }
 
 

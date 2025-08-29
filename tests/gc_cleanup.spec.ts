@@ -5,7 +5,7 @@ import { GripContext } from '../src/core/context';
 describe('GC cleanup of parent-child relationships', () => {
   it('should properly clean up stale child references when nodes are removed', async () => {
     const grok = new Grok();
-    const mainCtx = grok.mainContext;
+    const mainCtx = grok.mainPresentationContext;
     
     // Create child contexts
     const child1 = mainCtx.createChild();
@@ -45,7 +45,7 @@ describe('GC cleanup of parent-child relationships', () => {
   it('should handle complex parent-child relationships during node removal', async () => {
     const grok = new Grok();
     const rootCtx = grok.rootContext;
-    const mainCtx = grok.mainContext;
+    const mainCtx = grok.mainPresentationContext;
     
     // Create a more complex hierarchy
     const parent1 = mainCtx.createChild();
@@ -111,7 +111,7 @@ describe('GC cleanup of parent-child relationships', () => {
 
   it('should clean up orphaned nodes in snapshotSanityCheck', () => {
     const grok = new Grok();
-    const mainCtx = grok.mainContext;
+    const mainCtx = grok.mainPresentationContext;
     
     // Create child contexts
     const child1 = mainCtx.createChild();

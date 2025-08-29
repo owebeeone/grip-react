@@ -28,7 +28,6 @@ describe('TapMatcher Integration with SimpleResolver', () => {
         grok = new Grok();
         resolver = new SimpleResolver(grok);
         (grok as any).resolver = resolver;
-        grok.reset();
     });
 
     it('should drive tap transfers via query evaluation', async () => {
@@ -101,7 +100,6 @@ describe('MatchingContext Integration', () => {
         grok = new Grok();
         resolver = new SimpleResolver(grok);
         (grok as any).resolver = resolver;
-        grok.reset();
     });
 
     it('should drive tap transfers using its internal TapMatcher', () => {
