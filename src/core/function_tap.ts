@@ -1,47 +1,155 @@
+/**
+ * GRIP Function Tap System - Data transformation through compute functions
+ * 
+ * FunctionTap provides a flexible way to transform data by applying compute functions
+ * that can read from multiple parameter sources and maintain optional state. Unlike
+ * AtomValueTap which stores simple values, FunctionTap transforms inputs into outputs
+ * through user-defined computation logic.
+ * 
+ * Key features:
+ * - Compute functions that transform inputs to outputs
+ * - Support for home parameters (from tap's home context)
+ * - Support for destination parameters (from consumer contexts)
+ * - Optional state management for stateful transformations
+ * - Type-safe parameter and output handling
+ * - Handle Grips for exposing state management APIs
+ * 
+ * Use cases:
+ * - Unit conversions (metric to imperial)
+ * - Data formatting and transformation
+ * - Mapping between different Grip sets
+ * - Stateful computations that depend on multiple inputs
+ */
+
 import { Grip } from "./grip";
 import { GripContext } from "./context";
 import type { Tap } from "./tap";
 import { BaseTap } from "./base_tap";
 
 // Type helpers for type-safe grips
+/**
+ * Type helper for creating a record of Grips with string keys.
+ * Used to define collections of related Grips in a type-safe manner.
+ */
 export type GripRecord = Record<string, Grip<any>>;
+
+/**
+ * Type helper that extracts the value type from a Grip.
+ * 
+ * @template G - The Grip type to extract the value type from
+ * @returns The value type that the Grip provides
+ */
 export type GripValue<G extends Grip<any>> = G extends Grip<infer T> ? T : never;
+
+/**
+ * Type helper that extracts all value types from a GripRecord.
+ * 
+ * @template R - The GripRecord to extract value types from
+ * @returns Union of all value types in the record
+ */
 export type Values<R extends GripRecord> = R[keyof R];
 
+/**
+ * Controller interface for managing FunctionTap state.
+ * 
+ * Provides get/set APIs for accessing and modifying the internal state
+ * of a FunctionTap. This interface is exposed through optional handle Grips,
+ * allowing clients to manage state directly.
+ * 
+ * @template StateRec - Record type defining the state Grips managed by this tap
+ */
 export interface FunctionTapHandle<StateRec extends GripRecord> {
+  /**
+   * Gets the current state value for a specific Grip.
+   * 
+   * @param grip - The state Grip to get the value for
+   * @returns The current state value or undefined if not set
+   */
   getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined;
+  
+  /**
+   * Sets the state value for a specific Grip.
+   * 
+   * @param grip - The state Grip to set the value for
+   * @param value - The new state value
+   */
   setState: <K extends keyof StateRec>(
     grip: StateRec[K],
     value: GripValue<StateRec[K]> | undefined,
   ) => void;
 }
 
+/**
+ * Compute function that transforms inputs into outputs.
+ * 
+ * This function is called whenever any input parameters change and is responsible
+ * for computing the output values based on the current state of all inputs.
+ * 
+ * The function receives:
+ * - dest: The destination context (consumer context)
+ * - getHomeParam: Function to read home parameters (from tap's home context)
+ * - getDestParam: Function to read destination parameters (from consumer context)
+ * - getState: Function to read internal state values
+ * 
+ * @template Outs - Record type defining the output Grips this tap provides
+ * @template Home - Record type defining the home parameter Grips
+ * @template Dest - Record type defining the destination parameter Grips
+ * @template StateRec - Record type defining the state Grips
+ */
 export type ComputeFn<
   Outs extends GripRecord,
   Home extends GripRecord,
   Dest extends GripRecord,
   StateRec extends GripRecord,
 > = (args: {
+  /** The destination context (consumer context) making the request */
   dest?: GripContext;
+  
+  /** Function to read home parameters from the tap's home context */
   getHomeParam: <K extends keyof Home>(grip: Home[K]) => GripValue<Home[K]> | undefined;
+  
+  /** Function to read destination parameters from the consumer context */
   getDestParam: <K extends keyof Dest>(
     grip: Dest[K],
     dest?: GripContext,
   ) => GripValue<Dest[K]> | undefined;
+  
+  /** Function to read internal state values */
   getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined;
 }) => Map<Values<Outs>, GripValue<Values<Outs>>>;
 
+/**
+ * Configuration for creating a FunctionTap.
+ * 
+ * Defines all the parameters, outputs, and behavior of a FunctionTap instance.
+ * 
+ * @template Outs - Record type defining the output Grips this tap provides
+ * @template Home - Record type defining the home parameter Grips
+ * @template Dest - Record type defining the destination parameter Grips
+ * @template StateRec - Record type defining the state Grips
+ */
 export interface FunctionTapConfig<
   Outs extends GripRecord,
   Home extends GripRecord = {},
   Dest extends GripRecord = {},
   StateRec extends GripRecord = {},
 > {
+  /** The Grips this tap will provide as outputs */
   provides: ReadonlyArray<Values<Outs>>;
+  
+  /** Grips to read from destination contexts (consumer contexts) */
   destinationParamGrips?: ReadonlyArray<Values<Dest>>;
+  
+  /** Grips to read from the tap's home context */
   homeParamGrips?: ReadonlyArray<Values<Home>>;
+  
+  /** Optional Grip for exposing the state management handle */
   handleGrip?: Grip<FunctionTapHandle<StateRec>>;
+  
+  /** Initial state values if the tap needs to be stateful */
   initialState?: ReadonlyArray<[Grip<any>, any]> | ReadonlyMap<Grip<any>, any>;
+  
+  /** The compute function that transforms inputs to outputs */
   compute: ComputeFn<Outs, Home, Dest, StateRec>;
 }
 
@@ -174,6 +282,16 @@ export class FunctionTap<
   }
 }
 
+/**
+ * Factory function to create a new FunctionTap instance.
+ * 
+ * @template Outs - Record type defining the output Grips this tap provides
+ * @template Home - Record type defining the home parameter Grips
+ * @template Dest - Record type defining the destination parameter Grips
+ * @template StateRec - Record type defining the state Grips
+ * @param config - Configuration object for the FunctionTap
+ * @returns A new FunctionTap instance
+ */
 export function createFunctionTap<
   Outs extends GripRecord,
   Home extends GripRecord = {},
