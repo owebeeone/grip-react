@@ -1,3 +1,23 @@
+/**
+ * GRIP Tap Resolver - Core producer-consumer resolution system
+ * 
+ * Implements the core algorithms for resolving which Tap (producer) provides data
+ * for a given Grip (consumer) based on context hierarchy and priority rules.
+ * 
+ * Key Responsibilities:
+ * - Producer-consumer relationship management
+ * - Context hierarchy traversal and priority resolution
+ * - Graph state updates during Tap/consumer lifecycle changes
+ * - Delta-based producer updates with batched re-resolution
+ * - Breadth-first, root-last search algorithm implementation
+ * 
+ * Core Algorithms:
+ * - Closest Provider Resolution: Finds the nearest Tap in the context hierarchy
+ * - Delta Application: Efficiently updates graph state from query evaluation results
+ * - Descendant Re-evaluation: Propagates changes through the context DAG
+ * - Producer-Consumer Linking: Establishes and maintains data flow connections
+ */
+
 import { Grip } from "./grip";
 import { GripContext } from "./context";
 import { Tap, TapFactory } from "./tap";
@@ -8,6 +28,9 @@ import { consola } from "consola";
 
 const logger = consola.withTag("core/tap_resolver.ts");
 
+/**
+ * Utility function to compute intersection of a Set and an Iterable.
+ */
 function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
   const result = new Set<T>();
   for (const item of iterable) {
@@ -18,6 +41,9 @@ function intersection<T>(setA: Set<T>, iterable: Iterable<T>): Set<T> {
   return result;
 }
 
+/**
+ * Utility function to compute difference between two Sets.
+ */
 function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
   const result = new Set<T>();
   for (const item of setA) {
@@ -29,56 +55,67 @@ function difference<T>(setA: Set<T>, setB: Set<T>): Set<T> {
 }
 
 /**
- * Defines the interface for a pluggable resolver that manages producer-consumer
- * relationships within the Grip graph.
+ * Interface for pluggable resolver implementations.
+ * 
+ * Defines the contract for managing producer-consumer relationships
+ * within the GRIP graph. The resolver is responsible for:
+ * - Linking consumers to appropriate producers
+ * - Handling Tap lifecycle events
+ * - Managing context hierarchy changes
+ * - Applying producer deltas from query evaluation
  */
 export interface IGripResolver {
   /**
    * Called when a new consumer is added to a context.
-   * It finds and links the appropriate producer.
+   * Finds and links the appropriate producer based on context hierarchy.
    */
   addConsumer(context: GripContext, grip: Grip<any>): void;
 
   /**
    * Called when a consumer is removed from a context.
-   * It unlinks it from its producer.
+   * Unlinks it from its current producer.
    */
   removeConsumer(context: GripContext, grip: Grip<any>): void;
 
   /**
-   * Called when a new producer (tap) is added to a context.
-   * It finds and re-links any descendant consumers that might be affected.
+   * Called when a new producer (Tap) is added to a context.
+   * Re-links any descendant consumers that might be affected.
    */
   addProducer(context: GripContext, tap: Tap | TapFactory): void;
 
   /**
-   * Called when a producer (tap) is removed from a context.
-   * It finds and re-links any consumers that were linked to it.
+   * Called when a producer (Tap) is removed from a context.
+   * Re-links any consumers that were linked to it.
    */
   removeProducer(context: GripContext, tap: Tap | TapFactory): void;
 
   /**
    * Called when a parent is added to a context.
-   * It re-evaluates all consumers in the context and its descendants.
+   * Re-evaluates all consumers in the context and its descendants.
    */
   addParent(context: GripContext, parent: GripContext): void;
 
   /**
    * Called when a parent is removed from a context.
-   * It re-evaluates all consumers in the context and its descendants.
+   * Re-evaluates all consumers in the context and its descendants.
    */
   unlinkParent(context: GripContext, parent: GripContext): void;
 
   /**
    * Called when a producer delta is applied to a context.
-   * It updates the graph to reflect the new producer state.
+   * Updates the graph to reflect new producer state from query evaluation.
    */
   applyProducerDelta(context: GripContext | GripContextNode, delta: EvaluationDelta): void;
 }
 
 /**
- * A simple, correct implementation of the IGripResolver interface based on the
- * core algorithms defined in GRIP_GRAPH_OPS.md.
+ * Simple, correct implementation of the IGripResolver interface.
+ * 
+ * Implements the core resolution algorithms defined in GRIP_GRAPH_OPS.md:
+ * - Breadth-first, root-last search for closest provider
+ * - Delta-based graph updates with batched re-resolution
+ * - Producer-consumer lifecycle management
+ * - Context hierarchy change propagation
  */
 export class SimpleResolver implements IGripResolver {
   private grok: Grok;
@@ -87,6 +124,12 @@ export class SimpleResolver implements IGripResolver {
     this.grok = grok;
   }
 
+  /**
+   * Adds a consumer and resolves it to the best available producer.
+   * 
+   * Ensures the consumer is recorded on the node for future re-evaluations
+   * and immediately resolves it to find the closest provider.
+   */
   addConsumer(context: GripContext, grip: Grip<any>): void {
     const node = this.grok.ensureNode(context);
     // Ensure the consumer is recorded on the node so future re-evaluations can find it
@@ -94,6 +137,12 @@ export class SimpleResolver implements IGripResolver {
     this.resolveConsumer(node, grip);
   }
 
+  /**
+   * Removes a consumer and unlinks it from its producer.
+   * 
+   * Cleans up the producer-consumer relationship and removes the consumer
+   * from the node's registry.
+   */
   removeConsumer(context: GripContext, grip: Grip<any>): void {
     const node = this.grok.ensureNode(context);
     this.unresolveConsumer(node, grip);
@@ -101,6 +150,20 @@ export class SimpleResolver implements IGripResolver {
     node.removeConsumerForGrip(grip);
   }
 
+  /**
+   * Applies producer delta from query evaluation with batched re-resolution.
+   * 
+   * This is the core method for updating the graph state when query evaluation
+   * determines that different Taps should provide specific Grips. The method:
+   * 
+   * 1. Collects all affected consumers before making changes
+   * 2. Applies structural changes to the graph
+   * 3. Triggers batched re-resolution for affected consumers
+   * 4. Cleans up empty producer records
+   * 
+   * The delta contains TapAttribution objects that specify which Taps should
+   * provide which Grips based on query evaluation results.
+   */
   applyProducerDelta(context: GripContext | GripContextNode, delta: EvaluationDelta): void {
     const node = context.kind === "GripContext" ? context.getNode() : context;
     if (process.env.NODE_ENV !== "production")
@@ -111,6 +174,7 @@ export class SimpleResolver implements IGripResolver {
         logger.log(
           `[SimpleResolver] applyProducerDelta: Executing queued delta application for ${node.id}`,
         );
+      
       // --- Step 1: Collect all affected consumers before making any changes ---
       const consumersToReResolve = new Set<{ destNode: GripContextNode; grip: Grip<any> }>();
       for (const [tap, attribution] of delta.removed.entries()) {
@@ -186,6 +250,14 @@ export class SimpleResolver implements IGripResolver {
     }, 100); // Schedule as a low-priority task
   }
 
+  /**
+   * Analyzes delta to determine added, removed, and transferred Grips.
+   * 
+   * Compares current producer state with desired final state to identify:
+   * - Grips that need new producers (added)
+   * - Grips that lost their producers (removed)
+   * - Grips that moved between producers (transferred)
+   */
   private analyzeDelta(node: GripContextNode, delta: EvaluationDelta) {
     // 1. Determine the current state of producers
     const currentProducers = new Map<Tap | TapFactory, Set<Grip<any>>>();
@@ -226,6 +298,7 @@ export class SimpleResolver implements IGripResolver {
         }
       }
     }
+    
     // Apply additions from delta
     for (const [tap, attribution] of delta.added.entries()) {
       if (!tempFinalGrips.has(tap)) {
@@ -264,6 +337,9 @@ export class SimpleResolver implements IGripResolver {
     return { added, removed, transferred, finalProducers };
   }
 
+  /**
+   * Finds which Tap provides a specific Grip in a producer map.
+   */
   private findTapForGrip(
     grip: Grip<any>,
     map: Map<Tap | TapFactory, Set<Grip<any>>>,
@@ -276,6 +352,11 @@ export class SimpleResolver implements IGripResolver {
     return undefined;
   }
 
+  /**
+   * Collects all consumers of a specific Grip from a producer record.
+   * 
+   * Used to identify which consumers need re-resolution when a producer changes.
+   */
   private collectConsumers(
     producerRecord: ProducerRecord,
     grip: Grip<any>,
@@ -288,6 +369,12 @@ export class SimpleResolver implements IGripResolver {
     }
   }
 
+  /**
+   * Adds a producer (Tap) to a context and re-evaluates affected consumers.
+   * 
+   * Attaches the Tap to the context, creates producer records, and re-resolves
+   * all consumers in the producer's context and descendants that could be affected.
+   */
   addProducer(context: GripContext, tap: Tap): void {
     // Attach tap to context so it tracks its home and sets up producer record
     tap.onAttach?.(context);
@@ -322,6 +409,12 @@ export class SimpleResolver implements IGripResolver {
     }
   }
 
+  /**
+   * Removes a producer (Tap) from a context and re-links affected consumers.
+   * 
+   * Snapshot all affected consumer-producer relationships, remove the producer,
+   * and re-resolve each affected consumer to find the next-best provider.
+   */
   removeProducer(context: GripContext, tap: Tap | TapFactory): void {
     const producerNode = this.grok.ensureNode(context);
     const producerRecord = producerNode.getProducerRecord(tap);
@@ -364,10 +457,22 @@ export class SimpleResolver implements IGripResolver {
     }
   }
 
+  /**
+   * Called when a parent is added to a context.
+   * 
+   * Re-evaluates all consumers in the context and its descendants since
+   * the context hierarchy has changed.
+   */
   addParent(context: GripContext, parent: GripContext): void {
     this.reevaluateDescendants(context);
   }
 
+  /**
+   * Called when a parent is removed from a context.
+   * 
+   * Updates the graph to reflect the removed parent and re-evaluates
+   * all consumers in the context and its descendants.
+   */
   unlinkParent(context: GripContext, parent: GripContext): void {
     // Update the graph to reflect the removed parent, then re-evaluate.
     // If the context implementation does not support unlinking, this is a no-op.
@@ -377,7 +482,10 @@ export class SimpleResolver implements IGripResolver {
 
   /**
    * Re-evaluates all consumers in a context and all of its descendants.
+   * 
    * This is a costly operation, triggered by a change in parentage.
+   * Used when the context hierarchy changes and all consumers need
+   * to be re-resolved to find new best providers.
    */
   private reevaluateDescendants(context: GripContext): void {
     const startNode = this.grok.ensureNode(context);
@@ -393,6 +501,10 @@ export class SimpleResolver implements IGripResolver {
 
   /**
    * Resolves a single consumer and updates the graph state.
+   * 
+   * Finds the best producer for the consumer and establishes the
+   * producer-consumer relationship. If the producer changes, it
+   * unlinks from the old producer and links to the new one.
    */
   resolveConsumer(node: GripContextNode, grip: Grip<any>): void {
     const currentProducerNode = node.getResolvedProviders().get(grip);
@@ -432,6 +544,9 @@ export class SimpleResolver implements IGripResolver {
 
   /**
    * Unlinks a consumer from its current producer, if any.
+   * 
+   * Removes the producer-consumer relationship and cleans up
+   * the resolved provider mapping.
    */
   unresolveConsumer(destNode: GripContextNode, grip: Grip<any>): void {
     const resolvedProviders = destNode.getResolvedProviders();
@@ -446,7 +561,14 @@ export class SimpleResolver implements IGripResolver {
 
   /**
    * Finds the highest-priority producer for a given grip starting from a context node.
-   * Implements the breadth-first, root-last search algorithm.
+   * 
+   * Implements the breadth-first, root-last search algorithm:
+   * 1. Check the starting node first (closest provider)
+   * 2. Use BFS to traverse the context hierarchy
+   * 3. Process non-root parents before root parents (root-last)
+   * 4. Respect explicit priority ordering from the context layer
+   * 
+   * Returns the closest provider node or null if no provider found.
    */
   private findProducerFor(startNode: GripContextNode, grip: Grip<any>): GripContextNode | null {
     // 1. Check self
@@ -494,6 +616,9 @@ export class SimpleResolver implements IGripResolver {
 
   /**
    * Performs a traversal to get all unique descendants of a starting node.
+   * 
+   * Uses BFS to collect all descendant nodes in the context DAG.
+   * Used for propagating changes through the context hierarchy.
    */
   private getDescendants(startNode: GripContextNode): GripContextNode[] {
     const descendants = new Set<GripContextNode>();
@@ -518,6 +643,13 @@ export class SimpleResolver implements IGripResolver {
   }
 
   // Internal helpers used by Grok's original resolve flow retained for completeness
+  /**
+   * Stage 1 resolution for Grok's original resolve flow.
+   * 
+   * This method is tightly coupled with Grok's internal graph traversal.
+   * Implements the core logic for finding and linking producers to consumers
+   * in the original resolution algorithm.
+   */
   resolveConsumerStage1(
     dest: GripContext,
     source: GripContext,
@@ -557,6 +689,12 @@ export class SimpleResolver implements IGripResolver {
     return false;
   }
 
+  /**
+   * Resolves producers for a set of Grips in a context.
+   * 
+   * Checks for local consumers that can be provided by the available Grips,
+   * handling shadowing and overrides appropriately.
+   */
   resolveProducer(ctx: GripContext, current: GripContext | undefined, grips: Set<Grip<any>>) {
     var available_grips = grips;
 
