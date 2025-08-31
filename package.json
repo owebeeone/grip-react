@@ -2,7 +2,7 @@
   "name": "@owebeeone/grip-react",
   "version": "0.1.0",
   "description": "",
-  "main": "./dist/index.cjs",
+  "main": "./dist/index.js",
   "scripts": {
     "test": "vitest run --coverage",
     "build": "tsup",
@@ -34,15 +34,13 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "sideEffects": false,
-  "exports": [
-    [
-      {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.mjs",
-        "require": "./dist/index.cjs"
-      }
-    ]
-  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
   "files": [
     "dist",
     "README.md",

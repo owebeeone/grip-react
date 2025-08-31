@@ -345,14 +345,17 @@ export function useTextGrip<T = string>(
 } {
   const { ctx, parse, format } = opts ?? {};
   const value = useGrip(grip, ctx);
-  const updateValue = useGripUpdater(tapGrip, ctx);
+  const setValue = useGripSetter(tapGrip, ctx);
   const uiValue = (format ? format(value) : (value as unknown as string | undefined)) ?? "";
   const onChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const s = e.target.value;
-      updateValue(parse ? parse(s) : (s as unknown as T));
+      const next = parse ? parse(s) : (s as unknown as T);
+      if (next !== undefined) {
+        setValue(next);
+      }
     },
-    [updateValue, parse],
+    [setValue, parse],
   );
   return { value: uiValue, onChange };
 }
@@ -421,7 +424,9 @@ export function useNumberGrip(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const s = e.target.value;
       const n = (parse ?? defaultParse)(s);
-      setValue(applyClamp(n));
+      const clamped = applyClamp(n);
+      if (clamped == null) return; // cannot set undefined for Grip<number>
+      setValue(clamped);
     },
     [setValue, parse, defaultParse, applyClamp],
   );
@@ -471,7 +476,10 @@ export function useSelectGrip<T = string>(
   const onChange = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       const s = e.target.value;
-      setValue(parse ? parse(s) : (s as unknown as T));
+      const next = parse ? parse(s) : (s as unknown as T);
+      if (next !== undefined) {
+        setValue(next);
+      }
     },
     [setValue, parse],
   );
