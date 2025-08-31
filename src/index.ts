@@ -63,3 +63,4 @@ export * from "./react/hooks";
 
 // Query system for declarative tap selection
 export { withOneOf, withAnyOf, Query, QueryBuilderFactory } from "./core/query";
+export { FunctionTap, createFunctionTap } from "./core/function_tap";
