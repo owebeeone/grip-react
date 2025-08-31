@@ -75,11 +75,11 @@ export class AtomValueTap<T> extends BaseTapNoParams implements AtomTap<T>, Tap 
    * @param opts - Optional configuration
    * @param opts.handleGrip - Optional Grip for exposing the controller interface
    */
-  constructor(grip: Grip<T>, initial: T, opts?: { handleGrip?: Grip<any> }) {
+  constructor(grip: Grip<T>, initial?: T | undefined, opts?: { handleGrip?: Grip<any> }) {
     super({ provides: opts?.handleGrip ? [grip, opts.handleGrip] : [grip] });
     this.valueGrip = grip;
     this.handleGrip = opts?.handleGrip;
-    this.currentValue = initial;
+    this.currentValue = initial ?? grip.defaultValue!;
   }
 
   /**

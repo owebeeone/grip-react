@@ -192,7 +192,7 @@ export function useTap(
  * @template T - The type of value managed by the AtomTap
  * @param tapGrip - The Grip that provides the AtomTap handle
  * @param ctx - Optional context for data resolution
- * @returns A stable setter function that accepts values or updater functions
+ * @returns A setter function for the AtomTap handle
  * 
  * @example
  * ```tsx
@@ -209,13 +209,57 @@ export function useTap(
 export function useGripSetter<T>(
   tapGrip: Grip<AtomTapHandle<T>>,
   ctx?: GripContext | GripContextLike,
-): (v: T | undefined | ((prev: T | undefined) => T | undefined)) => void {
+): (v: T) => void {
   const handle = useGrip(tapGrip, ctx);
   return useCallback(
-    (v: T | undefined | ((prev: T | undefined) => T | undefined)) => {
-      (handle as any)?.set(v as any);
+    (v: T) => {
+      if (handle) {
+        handle.set(v);
+      } else {
+        console.warn(`useGripSetter: handle is undefined - no tap registered for: ${tapGrip.key}?`);
+      }
     },
-    [handle],
+    [handle, tapGrip],
+  );
+}
+
+/**
+ * Returns a stable updater function for an AtomTap handle.
+ * 
+ * This hook provides a convenient way to get an updater function that can update
+ * values managed by an AtomTap. The updater is stable across re-renders and
+ * safely handles cases where the handle isn't available yet.
+ * 
+ * @template T - The type of value managed by the AtomTap
+ * @param tapGrip - The Grip that provides the AtomTap handle
+ * @param ctx - Optional context for data resolution
+ * @returns An updater function for the AtomTap handle
+ * 
+ * @example
+ * 
+ * ```tsx
+ * const updateCounter = useGripUpdater(COUNTER_GRIP);
+ * 
+ * return (
+ *   <button onClick={() => updateCounter(prev => prev + 1)} />
+ * );
+ * ```
+ */
+
+export function useGripUpdater<T>(
+  tapGrip: Grip<AtomTapHandle<T>>,
+  ctx?: GripContext | GripContextLike,
+): (func: (prev: T) => T) => void {
+  const handle = useGrip(tapGrip, ctx);
+  return useCallback(
+    (func: (prev: T) => T) => {
+      if (handle) {
+        handle.update(func);
+      } else {
+        console.warn(`useGripUpdater: handle is undefined - no tap registered for: ${tapGrip.key}?`);
+      }
+    },
+    [handle, tapGrip],
   );
 }
 
@@ -226,11 +270,15 @@ export function useGripSetter<T>(
  * state management pattern. It's ideal for form inputs and other interactive
  * components that need both reading and writing capabilities.
  * 
+ * Notes:
+ * - value is T | undefined (no value published yet or intentionally unset)
+ * - setValue accepts a concrete value of type T (no updater function)
+ * 
  * @template T - The type of value managed by the Grip
  * @param grip - The Grip to read values from
  * @param tapGrip - The Grip that provides the AtomTap handle for writing
  * @param ctx - Optional context for data resolution
- * @returns A tuple of [value, setValue] similar to useState
+ * @returns A tuple: [value: T | undefined, setValue: (v: T) => void]
  * 
  * @example
  * ```tsx
@@ -246,9 +294,9 @@ export function useGripSetter<T>(
  */
 export function useGripState<T>(
   grip: Grip<T>,
-  tapGrip: Grip<AtomTapHandle<T>>,
+  tapGrip: Grip<AtomTapHandle<T>>, 
   ctx?: GripContext | GripContextLike,
-): [T | undefined, (v: T | undefined | ((prev: T | undefined) => T | undefined)) => void] {
+): [T | undefined, (v: T) => void] {
   const value = useGrip(grip, ctx);
   const setValue = useGripSetter(tapGrip, ctx);
   return [value, setValue];
@@ -297,14 +345,14 @@ export function useTextGrip<T = string>(
 } {
   const { ctx, parse, format } = opts ?? {};
   const value = useGrip(grip, ctx);
-  const setValue = useGripSetter(tapGrip, ctx);
+  const updateValue = useGripUpdater(tapGrip, ctx);
   const uiValue = (format ? format(value) : (value as unknown as string | undefined)) ?? "";
   const onChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const s = e.target.value;
-      setValue(parse ? parse(s) : (s as unknown as T));
+      updateValue(parse ? parse(s) : (s as unknown as T));
     },
-    [setValue, parse],
+    [updateValue, parse],
   );
   return { value: uiValue, onChange };
 }
