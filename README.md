@@ -29,7 +29,7 @@ TypeScript
 // From grip-react-demo/src/grips.ts \[1\]  
 import { defineGrip } from './runtime';
 
-export const COUNT \= defineGrip\<number\>('Count', 1);
+export const COUNT = defineGrip<number>('Count', 1);
 
 ### **Tap: The Source of Your Data**
 
@@ -53,20 +53,20 @@ This tutorial demonstrates how to build a simple, interactive counter, introduci
 
 At the root of the application, the component tree must be wrapped with the GripProvider. This component makes the grok engine and the root context available to all descendant components via React's context API.1
 
-TypeScript
-
-// src/main.tsx  
-import { GripProvider } from '@owebeeone/grip-react';  
-import { grok, main } from './runtime';  
-import { createRoot } from 'react-dom/client';  
+```tsx
+// src/main.tsx
+import { GripProvider } from '@owebeeone/grip-react';
+import { grok, main } from './runtime';
+import { createRoot } from 'react-dom/client';
 import App from './App';
 
-const root \= createRoot(document.getElementById('root')\!);  
-root.render(  
-  \<GripProvider grok={grok} context={main}\>  
-    \<App /\>  
-  \</GripProvider\>  
+const root = createRoot(document.getElementById('root')!);
+root.render(
+  <GripProvider grok={grok} context={main}>
+    <App />
+  </GripProvider>
 );
+```
 
 ### **Step 2: Define Your Grips**
 
@@ -78,8 +78,8 @@ TypeScript
 import type { AtomTapHandle } from '@owebeeone/grip-react';  
 import { defineGrip } from './runtime';
 
-export const COUNT \= defineGrip\<number\>('Count', 1);  
-export const COUNT\_TAP \= defineGrip\<AtomTapHandle\<number\>\>('Count.Tap');
+export const COUNT = defineGrip<number>('Count', 1);
+export const COUNT_TAP = defineGrip<AtomTapHandle<number>>('Count.Tap');
 
 ### **Step 3: Create a Tap (The Data Source)**
 
@@ -87,14 +87,16 @@ Use the createAtomValueTap factory to create a simple, self-contained state hold
 
 TypeScript
 
-// src/taps.ts  
-import { createAtomValueTap, type Tap } from '@owebeeone/grip-react';  
-import { COUNT, COUNT\_TAP } from './grips';
+```ts
+// src/taps.ts
+import { createAtomValueTap, type Tap } from '@owebeeone/grip-react';
+import { COUNT, COUNT_TAP } from './grips';
 
-export const CounterTap: Tap \= createAtomValueTap(  
-  COUNT,   
-  { initial: COUNT.defaultValue?? 0, handleGrip: COUNT\_TAP }  
+export const CounterTap: Tap = createAtomValueTap(
+  COUNT,
+  { initial: COUNT.defaultValue ?? 0, handleGrip: COUNT_TAP }
 );
+```
 
 ### **Step 4: Register the Tap**
 
@@ -116,22 +118,24 @@ With the system configured, a React component can now consume the state. The use
 
 TypeScript
 
-// src/App.tsx  
-import { useGrip } from '@owebeeone/grip-react';  
-import { COUNT, COUNT\_TAP } from './grips';
+```tsx
+// src/App.tsx
+import { useGrip } from '@owebeeone/grip-react';
+import { COUNT, COUNT_TAP } from './grips';
 
-export default function App() {  
-  const count \= useGrip(COUNT);  
-  const countTap \= useGrip(COUNT\_TAP);
+export default function App() {
+  const count = useGrip(COUNT);
+  const countTap = useGrip(COUNT_TAP);
 
-  return (  
-    \<div\>  
-      \<button onClick={() \=\> countTap?.update(c \=\> (c ?? 0) \- 1)}\>-\</button\>  
-      \<span\>Count: {count}\</span\>  
-      \<button onClick={() \=\> countTap?.update(c \=\> (c ?? 0) \+ 1)}\>\+\</button\>  
-    \</div\>  
-  );  
+  return (
+    <div>
+      <button onClick={() => countTap?.update(c => (c ?? 0) - 1)}>-</button>
+      <span>Count: {count}</span>
+      <button onClick={() => countTap?.update(c => (c ?? 0) + 1)}>+</button>
+    </div>
+  );
 }
+```
 
 This simple example showcases the core workflow: defining abstract data keys (Grips), providing them with a concrete implementation (Tap), and consuming them in a component that remains blissfully unaware of the underlying logic.
 
@@ -147,30 +151,30 @@ A practical application of the Context Graph is creating multiple, independent i
 
 The demo application implements this pattern effectively. A WeatherPanel component renders multiple WeatherColumn instances. Crucially, inside each WeatherColumn, the useChildContext hook is called to create an isolated scope.1
 
-TypeScript
+```tsx
+// grip-react-demo/src/WeatherColumn.tsx [1]
+import { useGrip, useRuntime, useAtomValueTap } from '@owebeeone/grip-react';
+import { useMemo } from 'react';
+import { WEATHER_LOCATION, WEATHER_LOCATION_TAP, WEATHER_TEMP_C, WEATHER_HUMIDITY } from './grips.weather';
 
-// grip-react-demo/src/WeatherColumn.tsx \[1\]  
-import { useGrip, useRuntime, useAtomValueTap } from '@owebeeone/grip-react';  
-import { useMemo } from 'react';  
-import { WEATHER\_LOCATION, WEATHER\_LOCATION\_TAP, WEATHER\_TEMP\_C, WEATHER\_HUMIDITY } from './grips.weather';
+export default function WeatherColumn(props: { title: string; initialLocation: string }) {
+  const { context: parentCtx } = useRuntime();
+  // Create a unique, isolated context for this column instance
+  const ctx = useMemo(() => parentCtx.getGripConsumerContext().createChild(), [parentCtx]);
 
-export default function WeatherColumn(props: { title: string; initialLocation: string }) {  
-  const { context: parentCtx } \= useRuntime();  
-  // Create a unique, isolated context for this column instance  
-  const ctx \= useMemo(() \=\> parentCtx.getGripConsumerContext().createChild(), \[parentCtx\]);
-
-  // Provide a location value \*inside this specific context\*  
-  useAtomValueTap(WEATHER\_LOCATION, {  
-    ctx,  
-    initial: props.initialLocation,  
-    tapGrip: WEATHER\_LOCATION\_TAP,  
+  // Provide a location value inside this specific context
+  useAtomValueTap(WEATHER_LOCATION, {
+    ctx,
+    initial: props.initialLocation,
+    tapGrip: WEATHER_LOCATION_TAP,
   });
 
-  // All these hooks now operate within the isolated 'ctx'  
-  const temp \= useGrip(WEATHER\_TEMP\_C, ctx);  
-  const humidity \= useGrip(WEATHER\_HUMIDITY, ctx);  
-  //...  
+  // All these hooks now operate within the isolated 'ctx'
+  const temp = useGrip(WEATHER_TEMP_C, ctx);
+  const humidity = useGrip(WEATHER_HUMIDITY, ctx);
+  //...
 }
+```
 
 Without the child context, all WeatherColumn instances would share a single WEATHER\_LOCATION value from their common parent. By creating a new child context for each column, every instance gets its own private scope. The useAtomValueTap call then registers a Tap for WEATHER\_LOCATION *within that specific child context*, effectively localizing the state. This demonstrates how the graph enables true component encapsulation, a pattern that is often cumbersome to achieve with traditional global state managers.
 
@@ -186,26 +190,29 @@ createAsyncMultiTap factory allows for a declarative setup, requiring a requestK
 
 TypeScript
 
-// grip-react-demo/src/openmeteo\_taps.ts \[1\]  
-import { createAsyncMultiTap, type Tap } from '@owebeeone/grip-react';  
-import { GEO\_LAT, GEO\_LNG, GEO\_LABEL, WEATHER\_LOCATION } from './grips.weather';
+```ts
+// grip-react-demo/src/openmeteo_taps.ts [1]
+import { createAsyncMultiTap, type Tap } from '@owebeeone/grip-react';
+import { GEO_LAT, GEO_LNG, GEO_LABEL, WEATHER_LOCATION } from './grips.weather';
 
-export function createLocationToGeoTap(): Tap {  
-  //...  
-  return createAsyncMultiTap({  
-    provides:,  
-    destinationParamGrips:,  
-    cacheTtlMs: 30 \* 60 \* 1000, // Cache for 30 minutes  
-    requestKeyOf: (params) \=\> params.get(WEATHER\_LOCATION)?.trim().toLowerCase(),  
-    fetcher: async (params, signal) \=\> {   
-      const location \= params.get(WEATHER\_LOCATION);  
-      const url \= \`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}\`;  
-      const res \= await fetch(url, { signal });  
-      //... fetch and return data  
-    },  
-    mapResult: (\_params, r) \=\> new Map(\[ /\*... map result to grips... \*/ \])  
-  });  
+export function createLocationToGeoTap(): Tap {
+  //...
+  return createAsyncMultiTap({
+    provides: /* ... */ undefined as any,
+    destinationParamGrips: /* ... */ undefined as any,
+    cacheTtlMs: 30 * 60 * 1000, // Cache for 30 minutes
+    requestKeyOf: (params) => params.get(WEATHER_LOCATION)?.trim().toLowerCase(),
+    fetcher: async (params, signal) => {
+      const location = params.get(WEATHER_LOCATION);
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}`;
+      const res = await fetch(url, { signal });
+      //... fetch and return data
+      return await res.json();
+    },
+    mapResult: (_params, r) => new Map([/* ... map result to grips ... */]),
+  });
 }
+```
 
 ### **Destination Parameters: Inverting Control**
 
@@ -221,25 +228,27 @@ anchorscad-viewer demo utilizes this pattern to derive navigation lists from a r
 
 TypeScript
 
-// anchorscad-viewer/src/taps.ts \[1\]  
-import { createFunctionTap } from '@owebeeone/grip-react';  
-import { ALL\_MODULES\_LIST, RAW\_STATUS\_JSON } from './grips';
+```ts
+// anchorscad-viewer/src/taps.ts [1]
+import { createFunctionTap, type Tap } from '@owebeeone/grip-react';
+import { ALL_MODULES_LIST, RAW_STATUS_JSON } from './grips';
 
-export function createGlobalNavigationDataProviderTap(): Tap {  
-  return createFunctionTap({  
-    provides:,  
-    homeParamGrips:,  
-    compute: ({ getHomeParam }) \=\> {  
-      const status \= getHomeParam(RAW\_STATUS\_JSON);  
-      const updates \= new Map();  
-      if (status) {  
-        const modules \= (status.module\_status ||).filter((m: any) \=\> m.shape\_results?.length \> 0);  
-        updates.set(ALL\_MODULES\_LIST, modules);  
-      }  
-      return updates;  
-    },  
-  });  
+export function createGlobalNavigationDataProviderTap(): Tap {
+  return createFunctionTap({
+    provides: /* ... */ undefined as any,
+    homeParamGrips: /* ... */ undefined as any,
+    compute: ({ getHomeParam }) => {
+      const status = getHomeParam(RAW_STATUS_JSON);
+      const updates = new Map();
+      if (status) {
+        const modules = (status.module_status || []).filter((m: any) => m.shape_results?.length > 0);
+        updates.set(ALL_MODULES_LIST, modules);
+      }
+      return updates;
+    },
+  });
 }
+```
 
 ## **Dynamic Systems with Declarative Queries**
 
@@ -253,30 +262,31 @@ The demo application uses this system to seamlessly switch between a mock weathe
 
 TypeScript
 
-// grip-react-demo/src/taps.ts \[1\]  
-import { withOneOf } from '@owebeeone/grip-react';  
-import { WEATHER\_PROVIDER\_NAME } from './grips';
+```ts
+// grip-react-demo/src/taps.ts [1]
+import { withOneOf } from '@owebeeone/grip-react';
+import { WEATHER_PROVIDER_NAME } from './grips';
 
-export function registerAllTaps() {  
-  //...  
-  // When WEATHER\_PROVIDER\_NAME is 'mock', activate the mock WeatherTap.  
-  const mockQuery \= withOneOf(WEATHER\_PROVIDER\_NAME, 'mock', 10).build();  
-  grok.addBinding({   
-    id: 'mock-weather-binding',   
-    query: mockQuery,   
-    tap: WeatherTap, // The mock implementation  
-    baseScore: 5   
+export function registerAllTaps() {
+  // When WEATHER_PROVIDER_NAME is 'mock', activate the mock WeatherTap.
+  const mockQuery = withOneOf(WEATHER_PROVIDER_NAME, 'mock', 10).build();
+  grok.addBinding({
+    id: 'mock-weather-binding',
+    query: mockQuery,
+    tap: WeatherTap, // The mock implementation
+    baseScore: 5,
   });
 
-  // When WEATHER\_PROVIDER\_NAME is 'meteo', activate the live OpenMeteo tap factory.  
-  const meteoQuery \= withOneOf(WEATHER\_PROVIDER\_NAME, 'meteo', 10).build();  
-  grok.addBinding({   
-    id: 'meteo-weather-binding',   
-    query: meteoQuery,   
-    tap: METEO\_TAP\_FACTORY, // The live implementation  
-    baseScore: 5   
-  });  
+  // When WEATHER_PROVIDER_NAME is 'meteo', activate the live OpenMeteo tap factory.
+  const meteoQuery = withOneOf(WEATHER_PROVIDER_NAME, 'meteo', 10).build();
+  grok.addBinding({
+    id: 'meteo-weather-binding',
+    query: meteoQuery,
+    tap: METEO_TAP_FACTORY, // The live implementation
+    baseScore: 5,
+  });
 }
+```
 
 By simply changing the value of the WEATHER\_PROVIDER\_NAME Grip—which is controlled by buttons in the UI—the entire data source for the weather panels is swapped transparently, without any of the consuming components being aware of the change.
 
@@ -301,41 +311,41 @@ Zustand excels at providing simple, low-boilerplate global state.2
 
 **Zustand Example**
 
-JavaScript
-
-// store.js  
+```js
+// store.js
 import { create } from 'zustand';
 
-const useCountStore \= create((set) \=\> ({  
-  count: 0,  
-  increment: () \=\> set((state) \=\> ({ count: state.count \+ 1 })),  
+const useCountStore = create((set) => ({
+  count: 0,
+  increment: () => set((state) => ({ count: state.count + 1 })),
 }));
 
-// Component.js  
+// Component.js
 import { useCountStore } from './store';
 
-function Counter() {  
-  const { count, increment } \= useCountStore();  
-  return \<button onClick\={increment}\>{count}\</button\>;  
+function Counter() {
+  const { count, increment } = useCountStore();
+  return <button onClick={increment}>{count}</button>;
 }
+```
 
 **grip-react Example**
 
-JavaScript
+```js
+// grips.js
+export const COUNT = defineGrip('Count', 0);
+export const COUNT_TAP = defineGrip('Count.Tap');
 
-// grips.js  
-export const COUNT \= defineGrip('Count', 0);  
-export const COUNT\_TAP \= defineGrip('Count.Tap');
+// taps.js
+export const CounterTap = createAtomValueTap(COUNT, { handleGrip: COUNT_TAP });
 
-// taps.js  
-export const CounterTap \= createAtomValueTap(COUNT, { handleGrip: COUNT\_TAP });
-
-// Component.js  
-function Counter() {  
-  const count \= useGrip(COUNT);  
-  const countTap \= useGrip(COUNT\_TAP);  
-  return \<button onClick\={() \=\> countTap.update(c \=\> c \+ 1)}\>{count}\</button\>;  
+// Component.js
+function Counter() {
+  const count = useGrip(COUNT);
+  const countTap = useGrip(COUNT_TAP);
+  return <button onClick={() => countTap.update(c => c + 1)}>{count}</button>;
 }
+```
 
 **Analysis:** For a single global value, Zustand is undeniably more concise. However, grip-react's architecture is designed for contextual scalability. To create multiple, independent counters with Zustand, one would need to use its non-hook createStore API and manually wire it through React Context or props, re-introducing boilerplate. grip-react handles this scenario natively with its Context Graph (useChildContext). grip-react trades a small amount of initial setup for superior contextual control and modularity as application complexity grows.
 
@@ -350,28 +360,28 @@ JavaScript
 // features/counter/counterSlice.js  
 import { createSlice } from '@reduxjs/toolkit';
 
-export const counterSlice \= createSlice({  
+export const counterSlice = createSlice({  
   name: 'counter',  
   initialState: { value: 0 },  
-  reducers: { increment: (state) \=\> { state.value \+= 1; } },  
+  reducers: { increment: (state) => { state.value += 1; } },  
 });  
-export const { increment } \= counterSlice.actions;  
+export const { increment } = counterSlice.actions;  
 export default counterSlice.reducer;
 
 // app/store.js  
 import { configureStore } from '@reduxjs/toolkit';  
 import counterReducer from '../features/counter/counterSlice';
 
-export const store \= configureStore({ reducer: { counter: counterReducer } });
+export const store = configureStore({ reducer: { counter: counterReducer } });
 
 // components/Counter.js  
 import { useSelector, useDispatch } from 'react-redux';  
 import { increment } from '../features/counter/counterSlice';
 
 function Counter() {  
-  const count \= useSelector((state) \=\> state.counter.value);  
-  const dispatch \= useDispatch();  
-  return \<button onClick\={() \=\> dispatch(increment())}\>{count}\</button\>;  
+  const count = useSelector((state) => state.counter.value);  
+  const dispatch = useDispatch();  
+  return <button onClick={() => dispatch(increment())}>{count}</button>;  
 }
 
 **grip-react Example:** The counter example remains the same. For more complex, structured state, one would compose multiple AtomTaps or use a MultiAtomValueTap or FunctionTap.
@@ -384,48 +394,49 @@ TanStack Query is the de facto standard for server state management in React, of
 
 **TanStack Query Example**
 
-JavaScript
-
-// components/User.js  
+```js
+// components/User.js
 import { useQuery } from '@tanstack/react-query';
 
-function User({ userId }) {  
-  const { data, isLoading, error } \= useQuery({  
-    queryKey: \['user', userId\],  
-    queryFn: () \=\> fetch(\`/api/users/${userId}\`).then(res \=\> res.json()),  
+function User({ userId }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetch(`/api/users/${userId}`).then(res => res.json()),
   });
 
-  if (isLoading) return 'Loading...';  
-  if (error) return \`Error: ${error.message}\`;  
-  return \<div\>{data.name}\</div\>;  
+  if (isLoading) return 'Loading...';
+  if (error) return `Error: ${error.message}`;
+  return <div>{data.name}</div>;
 }
+```
 
 **grip-react Example**
 
-JavaScript
+```ts
+// grips.js
+type Grip<T> = any; // for doc purposes only
+const USER_ID: Grip<string> = defineGrip('user_id');
+const USER_DATA: Grip<{ name: string }> = defineGrip('user_data');
 
-// grips.js  
-const USER\_ID \= defineGrip('user\_id');  
-const USER\_DATA \= defineGrip('user\_data');
-
-// taps.js  
-const UserDataTap \= createAsyncValueTap({  
-  provides: USER\_DATA,  
-  destinationParamGrips:,  
-  requestKeyOf: (params) \=\> \`user:${params.get(USER\_ID)}\`,  
-  fetcher: (params) \=\> fetch(\`/api/users/${params.get(USER\_ID)}\`).then(res \=\> res.json()),  
+// taps.js
+const UserDataTap = createAsyncValueTap({
+  provides: USER_DATA,
+  destinationParamGrips: /* ... */ undefined as any,
+  requestKeyOf: (params) => `user:${params.get(USER_ID)}`,
+  fetcher: (params) => fetch(`/api/users/${params.get(USER_ID)}`).then(res => res.json()),
 });
 
-// components/User.js  
-function User({ userId }) {  
-  const ctx \= useChildContext();  
-  // Provide the userId in the local context  
-  useAtomValueTap(USER\_ID, { ctx, initial: userId });  
-  // Request the user data from that context  
-  const data \= useGrip(USER\_DATA, ctx);  
-  //... handle loading/error states (can be provided by the tap)  
-  return \<div\>{data?.name}\</div\>;  
+// components/User.tsx
+function User({ userId }: { userId: string }) {
+  const ctx = useChildContext();
+  // Provide the userId in the local context
+  useAtomValueTap(USER_ID, { ctx, initial: userId });
+  // Request the user data from that context
+  const data = useGrip(USER_DATA, ctx);
+  // ... handle loading/error states (can be provided by the tap)
+  return <div>{data?.name}</div>;
 }
+```
 
 **Analysis:** Both libraries offer sophisticated caching, deduplication, and status tracking. The fundamental difference lies in how they are parameterized. TanStack Query embeds parameters directly into the queryKey, tightly coupling the data request to its dependencies. grip-react, through its destination parameters feature, decouples the parameter (USER\_ID) from the data request (USER\_DATA) by placing the parameter in the context graph. This makes grip-react's Taps more abstract, reusable, and composable. Furthermore, it unifies server state with all other state types in the application; a component can ask for USER\_DATA without needing to know it is asynchronous, whereas with TanStack Query, the async nature is explicit in the useQuery hook.
 
