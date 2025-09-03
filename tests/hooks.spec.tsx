@@ -19,7 +19,7 @@ describe('react hooks', () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
     const VALUE = defineGrip<number>('Hooks.Value', 0);
-    const grok = new Grok();
+    const grok = new Grok(registry);
 
     const tap = createAtomValueTap(VALUE, { initial: 1 }) as unknown as Tap;
     grok.registerTap(tap);
@@ -37,7 +37,7 @@ describe('react hooks', () => {
     const defineGrip = GripOf(registry);
     const VALUE = defineGrip<number>('Hooks.Simple', 10);
     const VALUE_TAP = defineGrip<AtomTap<number>>('Hooks.Simple2.Tap', undefined);
-    const grok = new Grok();
+    const grok = new Grok(registry);
 
     const { result, unmount, rerender } = renderHook(
       () => {
@@ -65,7 +65,7 @@ describe('react hooks', () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
     const VALUE = defineGrip<string>('Hooks.Custom', 'init');
-    const grok = new Grok();
+    const grok = new Grok(registry);
 
     const factory = () => createAtomValueTap(VALUE, { initial: 'A' }) as unknown as Tap;
 

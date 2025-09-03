@@ -8,42 +8,38 @@ grip-react is a powerful, reactive dataflow library that fundamentally decouples
 
 Modern React applications often contend with three distinct categories of state: local UI state, derived state computed from other state, and asynchronous server state. This typically leads to a fragmented toolkit: one library for simple global state (like Zustand), another for complex state machines (like Redux), and a third for server state management (like TanStack Query).
 
-grip-react is built on the architectural thesis that this separation is an artificial complexity. It provides a unified model where all data sources, regardless of their nature, are treated as interchangeable providers within a cohesive system. The library offers distinct but interoperable primitives for each state type: AtomValueTap for local state, FunctionTap for derived state, and BaseAsyncTap for asynchronous server state.1 All of these are resolved through the same core engine (Grok) and Context Graph, allowing developers to swap the underlying implementation of a data source—from a simple mock value to a complex, cached API call—with zero changes to the consuming component.
+grip-react is built on the architectural thesis that this separation is an artificial complexity. It provides a unified model where all data sources, regardless of their nature, are treated as interchangeable providers within a cohesive system. The library offers distinct but interoperable primitives for each state type: AtomValueTap for local state, FunctionTap for derived state, and BaseAsyncTap for asynchronous server state. All of these are resolved through the same core engine (Grok) and Context Graph, allowing developers to swap the underlying implementation of a data source—from a simple mock value to a complex, cached API call—with zero changes to the consuming component.
 
 This design achieves true implementation independence. A React component consumes data using the useGrip hook, which is entirely agnostic about the data's origin. The component only knows
 
-*what* data it needs (identified by a Grip), not *how* or *from where* that data is provided. This abstraction is the library's primary goal: to empower developers to build source-agnostic components that request data via an abstract identifier, allowing the system to handle the complex task of resolution and delivery.1
+*what* data it needs (identified by a Grip), not *how* or *from where* that data is provided. This abstraction is the library's primary goal: to empower developers to build source-agnostic components that request data via an abstract identifier, allowing the system to handle the complex task of resolution and delivery.
 
 ## **The Core Concepts: Grips, Taps, Drips, and Contexts**
 
-To understand grip-react, one must first grasp four core concepts. An effective analogy is to think of an application's data as a city's water supply.
+In this metaphor, Grip-react maps to a precision drip‑irrigation network
 
-### **Grip: The Address for Your Data**
+### **Grip: The Labeled Emitter**
 
-A Grip is like a unique street address (e.g., "123 Main St, Apt 4B"). It is a typed, immutable key that points to a specific piece of data but does not contain the data itself. Grips act as the universal identifiers for requesting and providing data within the system.1 They are typically defined centrally in a
+A Grip is a typed, immutable label for a specific emitter/line in the irrigation network. It identifies what output a plant (component) wants to receive (e.g., flow or nutrient mix) but does not contain the data itself. Grips are typically defined centrally in a GripRegistry to ensure uniqueness and are composed of a scope, name, and an optional defaultValue.
 
-GripRegistry to ensure uniqueness and are composed of a scope, name, and an optional defaultValue.1
-
-TypeScript
-
-// From grip-react-demo/src/grips.ts \[1\]  
+```ts
+// From grip-react-demo/src/grips.ts [1]  
 import { defineGrip } from './runtime';
 
 export const COUNT = defineGrip<number>('Count', 1);
+```
 
-### **Tap: The Source of Your Data**
+### **Tap: The Valve/Mixing Station**
 
-A Tap is like a water treatment plant or a reservoir. It is a data producer responsible for creating, fetching, or calculating the data for one or more Grips. Taps are classes or factory functions that implement the Tap interface and declare which Grips they provide.1 The library includes different kinds of Taps for different jobs, such as
+A Tap is a producer that opens/closes valves and/or mixes nutrients for one or more Grips. Taps are classes or factory functions that implement the Tap interface and declare which Grips they provide. The library includes different kinds of Taps for different jobs, such as AtomValueTap for simple valves (local state), FunctionTap for mixers/derivers (derived state), and AsyncTap for remote controllers (server state).
 
-AtomValueTap for simple values, FunctionTap for derived data, and AsyncTap for remote data.1
+### **Drip: The Emitter Output**
 
-### **Drip: The Faucet in Your Component**
+A Drip is the live output at the emitter. It represents a subscribable stream that delivers changes to all consumers whenever the upstream Tap adjusts the flow or composition. The useGrip hook interacts with a Drip under the hood, managing subscriptions and re-rendering the component upon updates.
 
-A Drip is the faucet in a component. It represents a live, subscribable data stream that a component uses to consume the data provided by a Tap. When the data at the source changes, the Drip automatically delivers the new value to all subscribers. The useGrip hook interacts with a Drip under the hood, managing subscriptions and re-rendering the component upon updates.1
+### **Context: The Irrigation Zone/Branch**
 
-### **Context: The Neighborhood**
-
-A GripContext is like a neighborhood or a district in the city. It provides scope and configuration. A Tap registered in a specific "neighborhood" becomes the default provider for all components within it, unless a component resides in a more specific sub-neighborhood that has its own, closer data source. GripContexts form a Directed Acyclic Graph (DAG), and components can create child contexts to establish isolated scopes. When a component requests a Grip, the engine searches up this graph from the component's current context to find the "closest" Tap that provides it.1
+A GripContext is like an irrigation zone or branch. It provides scope and configuration. A Tap registered in a specific branch becomes the default provider for all descendants within it, unless a closer branch declares its own Tap. GripContexts form a Directed Acyclic Graph (DAG), and components can create child contexts to establish isolated zones. When a component requests a Grip, the engine searches up this graph from the component's current context to find the closest Tap that provides it.
 
 ## **Getting Started: Your First Counter**
 
@@ -51,7 +47,7 @@ This tutorial demonstrates how to build a simple, interactive counter, introduci
 
 ### **Step 1: Setup the Provider**
 
-At the root of the application, the component tree must be wrapped with the GripProvider. This component makes the grok engine and the root context available to all descendant components via React's context API.1
+At the root of the application, the component tree must be wrapped with the GripProvider. This component makes the grok engine and the root context available to all descendant components via React's context API.
 
 ```tsx
 // src/main.tsx
@@ -70,22 +66,20 @@ root.render(
 
 ### **Step 2: Define Your Grips**
 
-Create unique, typed keys for the counter's value and its controller. The value Grip (COUNT) will hold the number, while the handle Grip (COUNT\_TAP) will provide the functions to modify it.1
+Create unique, typed keys for the counter's value and its controller. The value Grip (COUNT) will hold the number, while the handle Grip (COUNT\_TAP) will provide the functions to modify it.
 
-TypeScript
-
+```ts
 // src/grips.ts  
 import type { AtomTapHandle } from '@owebeeone/grip-react';  
 import { defineGrip } from './runtime';
 
 export const COUNT = defineGrip<number>('Count', 1);
 export const COUNT_TAP = defineGrip<AtomTapHandle<number>>('Count.Tap');
+```
 
 ### **Step 3: Create a Tap (The Data Source)**
 
-Use the createAtomValueTap factory to create a simple, self-contained state holder. This type of tap, an AtomValueTap, is ideal for local state management. It will *provide* the COUNT value and, because a handleGrip is specified, it will also provide a controller object on the COUNT\_TAP grip.1
-
-TypeScript
+Use the createAtomValueTap factory to create a simple, self-contained state holder. This type of tap, an AtomValueTap, is ideal for local state management. It will *provide* the COUNT value and, because a handleGrip is specified, it will also provide a controller object on the COUNT\_TAP grip.
 
 ```ts
 // src/taps.ts
@@ -100,10 +94,9 @@ export const CounterTap: Tap = createAtomValueTap(
 
 ### **Step 4: Register the Tap**
 
-Inform the grok engine that the CounterTap is available to serve data. Registration makes the tap discoverable by the resolution system.1
+Inform the grok engine that the CounterTap is available to serve data. Registration makes the tap discoverable by the resolution system.
 
-TypeScript
-
+```ts
 // src/taps.ts  
 import { grok } from './runtime';
 
@@ -111,12 +104,11 @@ export function registerAllTaps() {
   grok.registerTap(CounterTap);  
   //... other taps  
 }
+```
 
 ### **Step 5: Use the Grips in Your Component**
 
-With the system configured, a React component can now consume the state. The useGrip hook reads the live value of COUNT and retrieves the controller object from COUNT\_TAP. The component is completely decoupled from the CounterTap; it only knows about the Grips.1
-
-TypeScript
+With the system configured, a React component can now consume the state. The useGrip hook reads the live value of COUNT and retrieves the controller object from COUNT\_TAP. The component is completely decoupled from the CounterTap; it only knows about the Grips.
 
 ```tsx
 // src/App.tsx
@@ -141,15 +133,15 @@ This simple example showcases the core workflow: defining abstract data keys (Gr
 
 ## **Understanding the Power of the Context Graph**
 
-The Context Graph is grip-react's most powerful and defining feature. It is more than just a state container; it functions as a runtime Dependency Injection (DI) system for reactive data streams. In a typical DI system, a consumer requests a service by its type or token within a specific scope, and a container provides the appropriate implementation. grip-react mirrors this pattern: a component requests a Grip (the token) within its GripContext (the scope), and the grok engine (the container) traverses the context hierarchy to find the closest registered Tap (the service provider).1 The
+The Context Graph is grip-react's most powerful and defining feature. It is more than just a state container; it functions as a runtime Dependency Injection (DI) system for reactive data streams. In a typical DI system, a consumer requests a service by its type or token within a specific scope, and a container provides the appropriate implementation. grip-react mirrors this pattern: a component requests a Grip (the token) within its GripContext (the scope), and the grok engine (the container) traverses the context hierarchy to find the closest registered Tap (the service provider). The
 
-useChildContext hook allows for the creation of nested scopes, enabling fine-grained control over which "service" is provided where, facilitating the construction of highly modular and encapsulated applications.1
+useChildContext hook allows for the creation of nested scopes, enabling fine-grained control over which "service" is provided where, facilitating the construction of highly modular and encapsulated applications.
 
 ### **Example: Building Independent Weather Panels**
 
 A practical application of the Context Graph is creating multiple, independent instances of a component. Consider a dashboard displaying weather for several cities side-by-side. Each panel must manage its own location and data without interfering with the others.
 
-The demo application implements this pattern effectively. A WeatherPanel component renders multiple WeatherColumn instances. Crucially, inside each WeatherColumn, the useChildContext hook is called to create an isolated scope.1
+The demo application implements this pattern effectively. A WeatherPanel component renders multiple WeatherColumn instances. Crucially, inside each WeatherColumn, the useChildContext hook is called to create an isolated scope.
 
 ```tsx
 // grip-react-demo/src/WeatherColumn.tsx [1]
@@ -184,11 +176,9 @@ Taps are the workhorses of grip-react, providing the logic for all data sources.
 
 ### **Asynchronous Taps: Fetching Remote Data**
 
-AsyncTaps are designed for fetching data from external APIs. They provide a comprehensive feature set out-of-the-box, including LRU-TTL caching, request deduplication and coalescing, automatic cancellation via AbortController, and deadline-based timeouts.1 The
+AsyncTaps are designed for fetching data from external APIs. They provide a comprehensive feature set out-of-the-box, including LRU-TTL caching, request deduplication and coalescing, automatic cancellation via AbortController, and deadline-based timeouts. The
 
-createAsyncMultiTap factory allows for a declarative setup, requiring a requestKeyOf function for caching, a fetcher function to perform the request, and a mapResult function to transform the API response into Grip updates.1
-
-TypeScript
+createAsyncMultiTap factory allows for a declarative setup, requiring a requestKeyOf function for caching, a fetcher function to perform the request, and a mapResult function to transform the API response into Grip updates.
 
 ```ts
 // grip-react-demo/src/openmeteo_taps.ts [1]
@@ -216,17 +206,16 @@ export function createLocationToGeoTap(): Tap {
 
 ### **Destination Parameters: Inverting Control**
 
-A unique and powerful feature of grip-react is the concept of "destination parameters." This mechanism inverts the typical flow of control for data fetching. In a conventional model, a component *pushes* parameters to the data-fetching hook (e.g., useQuery({ queryKey: \['user', userId\] })). In grip-react, a Tap can declare a dependency on destinationParamGrips. The Tap then *pulls* these parameter values from the context of the component that is consuming its output.1
+A unique and powerful feature of grip-react is the concept of "destination parameters." This mechanism inverts the typical flow of control for data fetching. In a conventional model, a component *pushes* parameters to the data-fetching hook (e.g., useQuery({ queryKey: \['user', userId\] })). In grip-react, a Tap can declare a dependency on destinationParamGrips. The Tap then *pulls* these parameter values from the context of the component that is consuming its output.
 
-This inversion of control makes Taps highly reusable, "headless" services. A single, globally registered Tap can be configured implicitly by its consumers through their local contexts. The createLocationToGeoTap is a prime example: it provides geocoding data (GEO\_LAT, GEO\_LNG) but depends on the WEATHER\_LOCATION destination parameter. Each WeatherColumn provides a different WEATHER\_LOCATION in its local context, causing the single geocoding Tap to perform different API calls tailored to each consumer.1
+This inversion of control makes Taps highly reusable, "headless" services. A single, globally registered Tap can be configured implicitly by its consumers through their local contexts. The createLocationToGeoTap is a prime example: it provides geocoding data (GEO\_LAT, GEO\_LNG) but depends on the WEATHER\_LOCATION destination parameter. Each WeatherColumn provides a different WEATHER\_LOCATION in its local context, causing the single geocoding Tap to perform different API calls tailored to each consumer.
 
 ### **Derived State with FunctionTap**
 
-FunctionTap is the grip-react equivalent of selectors (like in Redux) or derived atoms. It subscribes to one or more input Grips and computes an output Grip. Whenever an input Grip changes, the compute function re-runs automatically, updating the output.1 This is ideal for transformations, calculations, and filtering logic that needs to remain reactive. The
+FunctionTap is the grip-react equivalent of selectors (like in Redux) or derived atoms. It subscribes to one or more input Grips and computes an output Grip. Whenever an input Grip changes, the compute function re-runs automatically, updating the output. This is ideal for transformations, calculations, and filtering logic that needs to remain reactive. The
 
-anchorscad-viewer demo utilizes this pattern to derive navigation lists from a raw JSON data source.1
+anchorscad-viewer demo utilizes this pattern to derive navigation lists from a raw JSON data source.
 
-TypeScript
 
 ```ts
 // anchorscad-viewer/src/taps.ts [1]
@@ -252,15 +241,14 @@ export function createGlobalNavigationDataProviderTap(): Tap {
 
 ## **Dynamic Systems with Declarative Queries**
 
-Instead of embedding conditional logic within components to switch between data sources, grip-react provides a declarative query system. This system allows developers to define rules that bind specific Taps to certain application states. The grok engine evaluates these rules and automatically activates the correct Tap when the state changes.1
+Instead of embedding conditional logic within components to switch between data sources, grip-react provides a declarative query system. This system allows developers to define rules that bind specific Taps to certain application states. The grok engine evaluates these rules and automatically activates the correct Tap when the state changes.
 
 This approach elevates configuration to a "policy" level. The rules governing which data source to use are defined centrally, completely separate from the application's presentation logic. This is an extremely powerful pattern for implementing feature flags, A/B testing, or managing different environments (e.g., Storybook, testing, production) without cluttering components with conditional data-fetching logic. A component simply requests data with useGrip, and the query system ensures the correct provider is active behind the scenes.
 
 ### **Example: Switching Between Mock and Live Weather Data**
 
-The demo application uses this system to seamlessly switch between a mock weather Tap and a live API-driven Tap. The switch is controlled by the value of the WEATHER\_PROVIDER\_NAME Grip.1
+The demo application uses this system to seamlessly switch between a mock weather Tap and a live API-driven Tap. The switch is controlled by the value of the WEATHER\_PROVIDER\_NAME Grip.
 
-TypeScript
 
 ```ts
 // grip-react-demo/src/taps.ts [1]
@@ -390,7 +378,7 @@ function Counter() {
 
 ### **Side-by-Side: Server State (vs. TanStack Query)**
 
-TanStack Query is the de facto standard for server state management in React, offering a rich set of features for data fetching, caching, and synchronization.13
+TanStack Query is the de facto standard for server state management in React, offering a rich set of features for data fetching, caching, and synchronization.3
 
 **TanStack Query Example**
 
@@ -444,7 +432,7 @@ function User({ userId }: { userId: string }) {
 
 ### **Installation**
 
-Use the next tag to install the latest 0.1.x release:
+Use the next tag to install the latest 0..x release:
 
 ```bash
 npm install @owebeeone/grip-react@next
@@ -454,15 +442,15 @@ yarn add @owebeeone/grip-react@next
 
 ### **Core Hooks**
 
-* useGrip(grip, \[context\]): Reads a reactive value from the specified Grip. Subscribes the component to updates.1  
-* useTap(factory, \[options\]): Registers a Tap instance for the component's lifecycle. The Tap is created using the factory function and is automatically unregistered on unmount.1  
-* useChildContext(\[parentContext\]): Creates a new, isolated child GripContext that inherits from the parent.1  
-* useGripSetter(handleGrip, \[context\]): A convenience hook that retrieves a Tap handle and returns a stable setter function for updating its state.1  
-* useGripState(valueGrip, handleGrip, \[context\]): Provides a useState-like API \[value, setValue\] for a Grip controlled by an AtomTap.1
+* useGrip(grip, \[context\]): Reads a reactive value from the specified Grip. Subscribes the component to updates.  
+* useTap(factory, \[options\]): Registers a Tap instance for the component's lifecycle. The Tap is created using the factory function and is automatically unregistered on unmount.  
+* useChildContext(\[parentContext\]): Creates a new, isolated child GripContext that inherits from the parent.  
+* useGripSetter(handleGrip, \[context\]): A convenience hook that retrieves a Tap handle and returns a stable setter function for updating its state.  
+* useGripState(valueGrip, handleGrip, \[context\]): Provides a useState-like API \[value, setValue\] for a Grip controlled by an AtomTap.
 
 ### **Core Factories**
 
 * GripRegistry and GripOf(registry): Define and register new Grip instances.  
-* createAtomValueTap(valueGrip, \[options\]): Creates a Tap for managing simple, atom-style local state.1  
-* createFunctionTap(config): Creates a Tap for deriving state from one or more input Grips.1  
-* createAsyncValueTap(config) / createAsyncMultiTap(config): Creates Taps for handling asynchronous operations like API calls, with built-in support for caching, cancellation, and more.1
+* createAtomValueTap(valueGrip, \[options\]): Creates a Tap for managing simple, atom-style local state.  
+* createFunctionTap(config): Creates a Tap for deriving state from one or more input Grips.  
+* createAsyncValueTap(config) / createAsyncMultiTap(config): Creates Taps for handling asynchronous operations like API calls, with built-in support for caching, cancellation, and more.

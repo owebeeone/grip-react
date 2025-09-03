@@ -14,7 +14,7 @@ describe("Engine shared drip semantics", () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
     const VALUE = defineGrip<number>("Value", 0);
-    const grok = new Grok();
+    const grok = new Grok(registry);
     const ctx = grok.mainHomeContext.createChild();
     const tap = createAtomValueTap(VALUE, { initial: 42 }) as unknown as Tap;
     grok.registerTap(tap);
@@ -25,7 +25,7 @@ describe("Engine shared drip semantics", () => {
   });
 
   it("drip supports multiple subscribers and onFirst/onZero fire appropriately", () => {
-    const grok = new Grok();
+    const grok = new Grok(new GripRegistry());
     const d = new Drip<number>(grok.mainHomeContext, 1);
     let first = 0;
     let zero = 0;
@@ -56,7 +56,7 @@ describe("Engine parameter-driven updates", () => {
     const defineGrip = GripOf(registry);
     const PARAM = defineGrip<string>("Param", "A");
     const OUT = defineGrip<number>("Out", 0);
-    const grok = new Grok();
+    const grok = new Grok(registry);
     const ctx = grok.mainHomeContext.createChild();
     // Producer that depends on PARAM using BaseTap's destinationParamGrips
     class ParamOutTap extends BaseTap implements Tap {
@@ -107,7 +107,7 @@ describe("Engine add/remove live taps", () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
     const OUT = defineGrip<number>("Out", 33);
-    const grok = new Grok();
+    const grok = new Grok(registry);
     const A = grok.mainHomeContext.createChild();
     const B = A.createChild();
 
@@ -189,7 +189,7 @@ describe("Engine add/remove live taps", () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
     const OUT = defineGrip<number>("Out", 44);
-    const grok = new Grok();
+    const grok = new Grok(registry);
     const A = grok.mainHomeContext.createChild();
     const B = A.createChild();
 
@@ -218,7 +218,7 @@ describe("Engine add/remove live taps", () => {
     const registry = new GripRegistry();
     const defineGrip = GripOf(registry);
     const OUT = defineGrip<number>("Out", 0);
-    const grok = new Grok();
+    const grok = new Grok(registry);
     const A = grok.mainHomeContext.createChild();
     const B = A.createChild();
 

@@ -15,7 +15,7 @@
  * - Manages the query evaluation system for declarative Tap selection
  */
 
-import { Grip } from "./grip";
+import { Grip, GripRegistry } from "./grip";
 import { GripContext, GripContextLike } from "./context";
 import { Drip } from "./drip";
 import { Tap, TapFactory } from "./tap";
@@ -99,7 +99,10 @@ export class Grok {
    * - mainPresentationContext: Default context for data consumption
    * - mainContext: Combined context for matching operations
    */
-  constructor() {
+  private registry: GripRegistry;
+
+  constructor(registry: GripRegistry) {
+    this.registry = registry;
     this.rootContext = new GripContext(this, "root");
     this.mainHomeContext = new GripContext(this, "main-home").addParent(this.rootContext, 0);
     this.mainPresentationContext = new GripContext(this, "main-presentation").addParent(
@@ -107,6 +110,10 @@ export class Grok {
       0,
     );
     this.mainContext = new MatchingContext(this.mainHomeContext, this.mainPresentationContext);
+  }
+
+  getRegistry(): GripRegistry {
+    return this.registry;
   }
 
   /**

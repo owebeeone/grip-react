@@ -25,7 +25,7 @@ describe("TapMatcher Integration with SimpleResolver", () => {
   };
 
   beforeEach(() => {
-    grok = new Grok();
+    grok = new Grok(gripRegistry);
     resolver = new SimpleResolver(grok);
     (grok as any).resolver = resolver;
   });
@@ -109,7 +109,7 @@ describe("MatchingContext Integration", () => {
   };
 
   beforeEach(() => {
-    grok = new Grok();
+    grok = new Grok(gripRegistry);
     resolver = new SimpleResolver(grok);
     (grok as any).resolver = resolver;
   });

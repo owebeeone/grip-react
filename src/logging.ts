@@ -20,7 +20,7 @@
  */
 
 import { consola } from "consola";
-import { Grip } from "./core/grip";
+import { Grip, GripRegistry } from "./core/grip";
 import { GripContext } from "./core/context";
 
 /**
@@ -34,7 +34,18 @@ import { GripContext } from "./core/context";
  * context system, enabling runtime configuration of which log messages
  * should be displayed.
  */
-export const LOGGING_TAGS_GRIP = new Grip<Map<string, boolean>>("logging:tags", new Map());
+// No module-level grip instance; acquire from registry at runtime in setupConsola
+
+/** Returns the shared logging tags Grip from the provided registry. */
+export function getLoggingTagsGrip(
+  registry: GripRegistry,
+): Grip<Map<string, boolean>> {
+  return registry.findOrDefineGrip<Map<string, boolean>>(
+    "tags",
+    new Map<string, boolean>(),
+    "logging",
+  );
+}
 
 /**
  * Sets up the Consola logging system with GRIP integration.
@@ -55,21 +66,18 @@ export const LOGGING_TAGS_GRIP = new Grip<Map<string, boolean>>("logging:tags", 
 export function setupConsola(context: GripContext) {
   // Disable all logging in production for performance
   if (process.env.NODE_ENV === "production") {
-    consola.setReporters({ log: () => {} }); // Disable logs in production
+    consola.setReporters([]); // Disable logs in production
     return;
   }
 
   let enabledTags = new Map<string, boolean>();
 
-  // Subscribe to changes in the logging tags configuration
-  const drip = context.getDrip(LOGGING_TAGS_GRIP);
-
-  drip.subscribe((tagsMap) => {
-    enabledTags = tagsMap || new Map();
-  });
-
+  // Get the logging tags grip from the per-engine registry and subscribe via grok.query
+  const registry = context.getGrok().getRegistry();
+  const loggingTagsGrip = getLoggingTagsGrip(registry);
+  const drip = context.getGrok().query(loggingTagsGrip, context);
   // Custom reporter that filters logs based on enabled tags
-  const customReporter = {
+  const customReporter: any = {
     log: (logObj: any) => {
       const tag = logObj.tag;
       
@@ -84,6 +92,11 @@ export function setupConsola(context: GripContext) {
       }
     },
   };
+  // Pin the drip to avoid GC by storing on the reporter
+  customReporter._drip = drip;
+  customReporter._unsub = drip.subscribe((tagsMap: Map<string, boolean> | undefined) => {
+    enabledTags = tagsMap || new Map();
+  });
 
   // Replace the default reporters with our custom one
   consola.setReporters([customReporter]);

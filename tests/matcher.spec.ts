@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Grok } from "../src/core/grok";
-import { Grip } from "../src/core/grip";
+import { Grip, GripRegistry } from "../src/core/grip";
 import { QueryBuilderFactory } from "../src/core/query";
 import { TapMatcher } from "../src/core/matcher";
 import { DualContextContainer } from "../src/core/containers";
@@ -40,7 +40,7 @@ describe("TapMatcher", () => {
   let regionController: AtomTap<string>;
 
   beforeEach(() => {
-    grok = new Grok();
+    grok = new Grok(new GripRegistry());
     container = grok.createDualContext(grok.mainPresentationContext);
     matcher = new TapMatcher(container);
 

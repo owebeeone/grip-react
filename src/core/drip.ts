@@ -62,6 +62,7 @@ export class Drip<T> {
    * @param context - The GripContext this Drip belongs to
    * @param initial - Initial value for the Drip
    */
+  /** @internal */
   constructor(context: GripContext, initial: T | undefined) {
     this.context = context;
     this.value = initial;
@@ -99,7 +100,7 @@ export class Drip<T> {
    * receive notifications via the task queue to avoid blocking the current
    * execution context.
    */
-  enqueueNotifySubscribers(): void {
+  private enqueueNotifySubscribers(): void {
     this.notifyImmediateSubscribers();
     if (!this.enqueued) {
       this.enqueued = true;
@@ -120,14 +121,14 @@ export class Drip<T> {
   /**
    * Notifies all regular subscribers with the current value.
    */
-  notifySubscribers(): void {
+  private notifySubscribers(): void {
     this.subs.forEach((fn) => fn(this.value));
   }
 
   /**
    * Notifies all immediate subscribers with the current value.
    */
-  notifyImmediateSubscribers(): void {
+  private notifyImmediateSubscribers(): void {
     this.immediateSubs.forEach((fn) => fn(this.value));
   }
 
@@ -147,6 +148,7 @@ export class Drip<T> {
    * @param fn - The callback function to call when values change
    * @returns An unsubscribe function to remove the subscription
    */
+  /** @internal */
   subscribeWith(
     queue: Set<(v: T | undefined) => void>,
     fn: (v: T | undefined) => void,
@@ -247,6 +249,7 @@ export class Drip<T> {
    * Triggers zero-subscriber callbacks if appropriate, with deferred
    * execution to handle transient resubscribe patterns.
    */
+  /** @internal */
   _notifyUnsubscribed(): void {
     if (this.subs.size === 0 && !this.zeroCheckScheduled) {
       this.zeroCheckScheduled = true;

@@ -30,6 +30,7 @@ export class Grip<T> {
   /** Optional default value returned when no provider is available */
   readonly defaultValue?: T;
 
+  /** @internal */
   constructor(opts: { scope?: string; name: string; defaultValue?: T }) {
     this.scope = opts.scope ?? "app";
     this.name = opts.name;
@@ -50,6 +51,10 @@ export class GripRegistry {
   /** Internal map of all registered grips by their full key */
   private grips = new Map<string, Grip<any>>();
 
+  private makeKey(scope: string | undefined, name: string): string {
+    return `${scope ?? "app"}:${name}`;
+  }
+
   /**
    * Defines and registers a new Grip with the registry.
    *
@@ -64,6 +69,17 @@ export class GripRegistry {
     if (this.grips.has(g.key)) throw new Error(`Grip already registered: ${g.key}`);
     this.grips.set(g.key, g);
     return g;
+  }
+
+  /**
+   * Finds an existing Grip or defines it if missing.
+   * This is explicit and side-effect free for callers that want idempotent setup.
+   */
+  findOrDefineGrip<T>(name: string, defaultValue?: T, scope?: string): Grip<T> {
+    const k = this.makeKey(scope, name);
+    const existing = this.grips.get(k) as Grip<T> | undefined;
+    if (existing) return existing;
+    return this.defineGrip<T>(name, defaultValue, scope);
   }
 
   /**

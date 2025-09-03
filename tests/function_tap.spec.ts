@@ -70,7 +70,7 @@ const makeFnTap = () =>
 
 describe("FunctionTap", () => {
   it("computes outputs from home param, destination param, and local state; updates on changes", () => {
-    const grok = new Grok();
+    const grok = new Grok(new GripRegistry());
     const P = grok.mainPresentationContext.createChild();
     const D1 = P.createChild();
     const D2 = P.createChild();
@@ -126,7 +126,7 @@ describe("FunctionTap", () => {
   });
 
   it("supports DualContext: separate home params and per-destination ops across multiple destinations", () => {
-    const grok = new Grok();
+    const grok = new Grok(new GripRegistry());
     // Create a dual context where home params live in home, and outputs in presentation
     const container = grok.createDualContext(grok.mainPresentationContext);
     const home = container.getGripHomeContext();

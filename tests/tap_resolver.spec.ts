@@ -26,7 +26,7 @@ describe("SimpleResolver", () => {
   const gripO = gripRegistry.defineGrip<string>("o", "o");
 
   beforeEach(() => {
-    grok = new Grok(); // Instantiate Grok first (resolver is optional in constructor)
+    grok = new Grok(gripRegistry); // Instantiate Grok first (resolver is optional in constructor)
     resolver = new SimpleResolver(grok); // Instantiate SimpleResolver with grok
     (grok as any).resolver = resolver; // Assign the resolver back to grok
   });

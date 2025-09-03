@@ -12,7 +12,7 @@ describe("WeatherPanel-style multi-context, multi-parent with independent simple
     const VALUE = defineGrip<string>("WP.Value", "init");
     const VALUE_TAP = defineGrip<AtomTap<string>>("WP.ValueTap", undefined as any);
 
-    const grok = new Grok();
+    const grok = new Grok(registry);
 
     // Build DAG: A (root child), B (parent A), C (parent A)
     const A = grok.mainPresentationContext.createChild();
