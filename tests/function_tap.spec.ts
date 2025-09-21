@@ -61,10 +61,14 @@ const makeFnTap = () =>
           res = a + b;
       }
       const txt = `${a} ${op} ${b} = ${res}`;
-      return new Map<Grip<any>, any>([
+      // Return results and optionally adjust state in a single homogeneous map
+      const out = new Map<Grip<any>, any>([
         [VALUE, res],
         [VALUE_STR, txt],
       ]);
+      // Example: if op is '/', clamp B to non-zero to avoid Infinity next time
+      if (op === "/" && b === 0) out.set(B, 1);
+      return out;
     },
   });
 
@@ -123,6 +127,76 @@ describe("FunctionTap", () => {
     grok.flush();
     expect(grok.query(VALUE, D2).get()).toBe(2 - 7);
     expect(grok.query(VALUE_STR, D2).get()).toBe("2 - 7 = -5");
+  });
+
+  it("applies state returned from compute() results without publishing it", () => {
+    const grok = new Grok(new GripRegistry());
+    const P = grok.mainPresentationContext.createChild();
+    const D = P.createChild();
+
+    // A provider
+    const aTap = createAtomValueTap(A, { initial: 10 }) as unknown as AtomTap<number>;
+    grok.registerTapAt(P, aTap as any);
+
+    
+    // Set op '/': compute() will set B to 1 when b==0 to avoid Infinity
+    const opTap = createAtomValueTap(OP, { initial: "/", handleGrip: OP_HANDLE }) as unknown as AtomTap<string>;
+    grok.registerTapAt(D, opTap as any);
+
+    // Function tap (register after OP provider so first compute sees '/')
+    const fnTap = makeFnTap();
+    grok.registerTapAt(P, fnTap);
+
+    // First compute: with b==0 and op '/', output may be Infinity or a fallback; then state B becomes 1
+    const dVal = grok.query(VALUE, D);
+    grok.flush();
+    expect([Infinity, 10]).toContain(dVal.get());
+    const handle = grok.query(HANDLE, D).get()!;
+    expect(handle.getState(B)).toBe(1);
+
+    // Next compute after flush picks up updated state B==1
+    grok.flush();
+    expect(dVal.get()).toBe(10 / 1);
+  });
+
+  it("exposes state to visible consumers via handle and propagates on changes", () => {
+    const grok = new Grok(new GripRegistry());
+    const P = grok.mainPresentationContext.createChild();
+    const D1 = P.createChild();
+    const D2 = P.createChild();
+
+    // Providers
+    const aTap = createAtomValueTap(A, { initial: 1 }) as unknown as AtomTap<number>;
+    grok.registerTapAt(P, aTap as any);
+
+    const opTap1 = createAtomValueTap(OP, { initial: "+", handleGrip: OP_HANDLE }) as unknown as AtomTap<string>;
+    grok.registerTapAt(D1, opTap1 as any);
+    const opTap2 = createAtomValueTap(OP, { initial: "+", handleGrip: OP_HANDLE }) as unknown as AtomTap<string>;
+    grok.registerTapAt(D2, opTap2 as any);
+
+    // Function tap
+    const fnTap = makeFnTap();
+    grok.registerTapAt(P, fnTap);
+
+    // Both consumers can see the handle and initial state
+    const h1 = grok.query(HANDLE, D1).get()!;
+    const h2 = grok.query(HANDLE, D2).get()!;
+    expect(h1.getState(B)).toBe(0);
+    expect(h2.getState(B)).toBe(0);
+
+    // Change via handle at D1; D2 sees updated state
+    h1.setState(B, 3);
+    grok.flush();
+    expect(h1.getState(B)).toBe(3);
+    expect(h2.getState(B)).toBe(3);
+
+    // Change via compute: set B to 1 when op '/' and b==0
+    h1.setState(B, 0);
+    const opHandleD2 = grok.query(OP_HANDLE, D2).get()!;
+    opHandleD2.set("/");
+    grok.flush();
+    expect(h1.getState(B)).toBe(1);
+    expect(h2.getState(B)).toBe(1);
   });
 
   it("supports DualContext: separate home params and per-destination ops across multiple destinations", () => {

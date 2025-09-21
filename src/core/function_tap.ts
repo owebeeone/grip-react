@@ -48,6 +48,16 @@ export type GripValue<G extends Grip<any>> = G extends Grip<infer T> ? T : never
  * @returns Union of all value types in the record
  */
 export type Values<R extends GripRecord> = R[keyof R];
+// Narrowed result typing for compute() return
+export type OutputKey<Outs extends GripRecord> = Values<Outs>;
+export type StateKey<StateRec extends GripRecord> = Values<StateRec>;
+export type OutputVal<Outs extends GripRecord> = GripValue<Values<Outs>>;
+export type StateVal<StateRec extends GripRecord> = GripValue<Values<StateRec>>;
+export type ComputeResultMap<
+  Outs extends GripRecord,
+  StateRec extends GripRecord
+> = Map<OutputKey<Outs> | StateKey<StateRec>, OutputVal<Outs> | StateVal<StateRec>>;
+
 
 /**
  * Controller interface for managing FunctionTap state.
@@ -116,7 +126,7 @@ export type ComputeFn<
   
   /** Function to read internal state values */
   getState: <K extends keyof StateRec>(grip: StateRec[K]) => GripValue<StateRec[K]> | undefined;
-}) => Map<Values<Outs>, GripValue<Values<Outs>>>;
+}) => ComputeResultMap<Outs, StateRec>;
 
 /**
  * Configuration for creating a FunctionTap.
@@ -146,6 +156,13 @@ export interface FunctionTapConfig<
   /** Optional Grip for exposing the state management handle */
   handleGrip?: Grip<FunctionTapHandle<StateRec>>;
   
+  /**
+   * Grips that represent state keys. When present in the compute() result map,
+   * their values are applied to internal state instead of being published.
+   * If omitted, keys present in initialState are treated as state by default.
+   */
+  stateGrips?: ReadonlyArray<Values<StateRec>>;
+
   /** Initial state values if the tap needs to be stateful */
   initialState?: ReadonlyArray<[Grip<any>, any]> | ReadonlyMap<Grip<any>, any>;
   
@@ -170,6 +187,7 @@ export class FunctionTap<
   protected readonly computeFn: ComputeFn<Outs, Home, Dest, StateRec>;
   readonly handleGrip?: Grip<FunctionTapHandle<StateRec>>;
   readonly state = new Map<Grip<any>, any>();
+  private readonly stateGripSet: Set<Grip<any>>;
   // Subscriptions for home param drips
   private homeParamUnsubs: Array<() => void> = [];
 
@@ -183,6 +201,19 @@ export class FunctionTap<
     });
     this.computeFn = config.compute;
     this.handleGrip = config.handleGrip as unknown as Grip<FunctionTapHandle<StateRec>> | undefined;
+    // Build state grip set from explicit stateGrips and/or keys from initialState.
+    const stateSet = new Set<Grip<any>>(
+      (config.stateGrips as unknown as ReadonlyArray<Grip<any>> | undefined) ?? []
+    );
+    if (config.initialState) {
+      const it = Array.isArray(config.initialState)
+        ? config.initialState
+        : Array.from((config.initialState as ReadonlyMap<Grip<any>, any>).keys()).map(
+            (g) => [g, undefined] as [Grip<any>, any]
+          );
+      for (const [g] of it) stateSet.add(g);
+    }
+    this.stateGripSet = stateSet;
     if (config.initialState) {
       const it = Array.isArray(config.initialState)
         ? config.initialState
@@ -243,9 +274,19 @@ export class FunctionTap<
     const getState = <K extends keyof StateRec>(g: StateRec[K]) =>
       this.state.get(g as unknown as Grip<any>) as GripValue<StateRec[K]> | undefined;
     const typedResult = this.computeFn({ dest, getHomeParam, getDestParam, getState });
+    // Split outputs vs state and apply state updates post-compute (no re-entrancy)
     const result = new Map<Grip<any>, any>();
+    const pendingState: Array<[Grip<any>, any]> = [];
     for (const [grip, value] of typedResult) {
-      result.set(grip as unknown as Grip<any>, value);
+      const g = grip as unknown as Grip<any>;
+      if (this.stateGripSet.has(g)) pendingState.push([g, value]);
+      else result.set(g, value);
+    }
+    if (pendingState.length) {
+      for (const [g, v] of pendingState) {
+        const prev = this.state.get(g);
+        if (prev !== v) this.state.set(g, v);
+      }
     }
     if (this.handleGrip) {
       result.set(this.handleGrip as unknown as Grip<any>, this as FunctionTapHandle<StateRec>);
