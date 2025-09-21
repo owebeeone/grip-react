@@ -239,6 +239,42 @@ export function createGlobalNavigationDataProviderTap(): Tap {
 }
 ```
 
+#### Homogeneous compute() result and state application
+
+- The `compute()` function returns a homogeneous `Map` that can include both output grips and state grips.
+- Keys that match declared state grips are applied to internal state (not published); others are published as outputs.
+- State keys are identified by `stateGrips` in the config; if omitted, they are inferred from `initialState`.
+
+```ts
+// Example: simplest stateful FunctionTap
+import { createFunctionTap } from '@owebeeone/grip-react';
+
+const VALUE = defineGrip<number>('Fn.Value', 0);
+const A = defineGrip<number>('Fn.A', 0);
+const B = defineGrip<number>('Fn.B', 0);
+const HANDLE = defineGrip<FunctionTapHandle<{ b: typeof B }>>('Fn.Handle');
+
+export function makeFnTap() {
+  return createFunctionTap({
+    provides: [VALUE],
+    homeParamGrips: [A],
+    handleGrip: HANDLE,
+    // If stateGrips is omitted, keys from initialState are treated as state.
+    initialState: [[B, 0]],
+    compute: ({ getHomeParam, getState }) => {
+      const a = getHomeParam(A) ?? 0;
+      const b = getState(B) ?? 0;
+      const out = new Map();
+      // Publish value as sum of A and B
+      out.set(VALUE, a + b);
+      // Tiny state demo: when A > 10, bump B by 1
+      if (a > 10) out.set(B, b + 1);
+      return out;
+    },
+  });
+}
+```
+
 ## **Dynamic Systems with Declarative Queries**
 
 Instead of embedding conditional logic within components to switch between data sources, grip-react provides a declarative query system. This system allows developers to define rules that bind specific Taps to certain application states. The grok engine evaluates these rules and automatically activates the correct Tap when the state changes.
@@ -432,12 +468,12 @@ function User({ userId }: { userId: string }) {
 
 ### **Installation**
 
-Use the next tag to install the latest 0..x release:
+Install the latest stable release:
 
 ```bash
-npm install @owebeeone/grip-react@next
+npm install @owebeeone/grip-react
 # or
-yarn add @owebeeone/grip-react@next
+yarn add @owebeeone/grip-react
 ```
 
 ### **Core Hooks**
@@ -454,3 +490,13 @@ yarn add @owebeeone/grip-react@next
 * createAtomValueTap(valueGrip, \[options\]): Creates a Tap for managing simple, atom-style local state.  
 * createFunctionTap(config): Creates a Tap for deriving state from one or more input Grips.  
 * createAsyncValueTap(config) / createAsyncMultiTap(config): Creates Taps for handling asynchronous operations like API calls, with built-in support for caching, cancellation, and more.
+
+#### createFunctionTap config (summary)
+
+- **provides**: array of output grips provided by this tap.
+- **destinationParamGrips?**: grips to read from each consumer's context.
+- **homeParamGrips?**: grips to read from the tap's home context.
+- **handleGrip?**: grip exposing the tap handle (e.g., for local state APIs).
+- **initialState?**: initial state as array or map of `[grip, value]` pairs.
+- **stateGrips?**: explicit list of grips treated as state; if omitted, keys from `initialState` are used.
+- **compute(args)**: returns a Map whose keys are either output grips (published) or state grips (applied to internal state, not published). The `args` include `getHomeParam`, `getDestParam`, `getState`, and optional `dest`.

@@ -260,4 +260,48 @@ describe("FunctionTap", () => {
     expect(grok.query(VALUE, CD1).get()).toBe(2); // 10 / 5
     expect(grok.query(VALUE, CD2).get()).toBe(15); // 10 + 5
   });
+
+  it("README simple stateful tap updates VALUE and propagates B via state", () => {
+    const grok = new Grok(new GripRegistry());
+    const P = grok.mainPresentationContext.createChild();
+    const D = P.createChild();
+
+    // Provide A at home context
+    const aTap = createAtomValueTap(A, { initial: 5 }) as unknown as AtomTap<number>;
+    grok.registerTapAt(P, aTap as any);
+
+    // Simple stateful FunctionTap from README
+    const simpleTap = createFunctionTap<{ value: typeof VALUE }, { a: typeof A }, {}, { b: typeof B}>({
+      provides: [VALUE],
+      homeParamGrips: [A],
+      handleGrip: HANDLE,
+      initialState: [[B, 0]],
+      compute: ({ getHomeParam, getState }) => {
+        const a = getHomeParam(A) ?? 0;
+        const b = getState(B) ?? 0;
+        const out = new Map<any, any>();
+        out.set(VALUE, a + b);
+        if (a > 10) out.set(B, b + 1);
+        return out;
+      },
+    });
+    grok.registerTapAt(P, simpleTap);
+
+    const val = grok.query(VALUE, D);
+    const h = grok.query(HANDLE, D).get()!;
+
+    // Initial state
+    expect(val.get()).toBe(5);
+    expect(h.getState(B)).toBe(0);
+
+    // Increase A above threshold; first compute uses old B, then B increments
+    ;(aTap as any).set(11);
+    grok.flush();
+    expect(h.getState(B)).toBe(1);
+    expect(val.get()).toBe(11); // a + b (before any new compute with updated state)
+    // Trigger a new compute by changing state via handle
+    h.setState(B, 2);
+    grok.flush();
+    expect(val.get()).toBe(13); // (A=11) + (B=2)
+  });
 });
