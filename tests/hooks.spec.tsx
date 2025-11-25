@@ -1,12 +1,8 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { GripRegistry, GripOf } from '../src/core/grip';
-import { Grok } from '../src/core/grok';
-import { GripProvider } from '../src/react/provider';
-import { useGrip, useAtomValueTap, useTap } from '../src/react/hooks';
-import { createAtomValueTap, AtomTap, AtomValueTap } from '../src/core/atom_tap';
-import type { Tap } from '../src/core/tap';
+import { GripRegistry, GripOf, Grok, createAtomValueTap, AtomTap, AtomValueTap, Tap } from '@owebeeone/grip-core';
+import { GripProvider, useGrip, useAtomValueTap, useTap } from '../src';
 
 function wrapperWith(grok: Grok) {
   return ({ children }: { children: React.ReactNode }) => (
@@ -42,7 +38,7 @@ describe('react hooks', () => {
     const { result, unmount, rerender } = renderHook(
       () => {
         useAtomValueTap(VALUE, { tapGrip: VALUE_TAP, initial: 5 });
-        return {value: useGrip(VALUE), tap: useGrip(VALUE_TAP)};
+        return { value: useGrip(VALUE), tap: useGrip(VALUE_TAP) };
       },
       { wrapper: wrapperWith(grok) }
     );

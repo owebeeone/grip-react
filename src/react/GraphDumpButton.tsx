@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Grok } from "../core/grok";
+import { Grok } from "@owebeeone/grip-core";
 import { GraphDumpDialog } from "./GraphDumpDialog";
 
 export function GraphDumpButton(props: { grok: Grok; label?: string }) {

@@ -19,9 +19,7 @@
  */
 
 import React, { createContext, useContext, useMemo } from "react";
-import { Grok } from "../core/grok";
-import { GripContextLike as GCtx, GripContextLike } from "../core/context";
-import { Grip } from "../core/grip";
+import { Grok, GripContextLike as GCtx, GripContextLike, Grip } from "@owebeeone/grip-core";
 
 /**
  * Runtime configuration containing GROK engine and context.

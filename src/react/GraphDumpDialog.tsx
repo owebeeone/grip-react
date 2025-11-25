@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Grok } from "../core/grok";
-import { GraphDump, GraphDumpKeyRegistry, GripGraphDumper } from "../core/graph_dump";
+import { Grok, GraphDump, GraphDumpKeyRegistry, GripGraphDumper } from "@owebeeone/grip-core";
 
 export function GraphDumpDialog(props: {
 	open: boolean;

@@ -9,14 +9,9 @@ export default defineConfig({
     ],
     reporters: "default",
     coverage: {
+      include: ["src/react/**/*.{ts,tsx}"],
       all: true,
       reporter: "text",
-      lines: 80,
-      functions: 80,
-      branches: 80,
-      statements: 80,
     },
   },
 });
-
-

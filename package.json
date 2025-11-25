@@ -48,6 +48,7 @@
     "LICENSE"
   ],
   "dependencies": {
+    "@owebeeone/grip-core": "file:../grip-core",
     "consola": "^3.4.2"
   }
 }

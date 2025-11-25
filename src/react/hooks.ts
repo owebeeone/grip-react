@@ -30,11 +30,8 @@
 
 import { useSyncExternalStore, useMemo, useEffect, useCallback } from "react";
 import type React from "react";
-import { Grip } from "../core/grip";
-import { GripContext, GripContextLike } from "../core/context";
+import { Grip, GripContext, GripContextLike, Tap, createAtomValueTap, AtomTap, AtomTapHandle } from "@owebeeone/grip-core";
 import { useRuntime } from "./provider";
-import { Tap } from "../core/tap";
-import { createAtomValueTap, AtomTap, AtomTapHandle } from "../core/atom_tap";
 
 /**
  * Creates and manages an atom-style Tap for reactive state management.

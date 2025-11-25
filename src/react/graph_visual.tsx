@@ -1,10 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { Grok } from "../core/grok";
-import { GraphDumpKeyRegistry } from "../core/graph_dump";
-import type { GripContextNode } from "../core/graph";
-import type { Grip } from "../core/grip";
-import type { Drip } from "../core/drip";
-import type { Tap } from "../core/tap";
+import type { Grok, GripContextNode, Grip, Drip, Tap } from "@owebeeone/grip-core";
+import { GraphDumpKeyRegistry } from "@owebeeone/grip-core";
 
 export type GripGraphVisualizerProps = {
   grok: Grok;
