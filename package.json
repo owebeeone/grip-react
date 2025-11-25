@@ -1,14 +1,14 @@
 {
   "name": "@owebeeone/grip-react",
   "version": "0.1.4",
-  "description": "",
+  "description": "React integration for GRIP (Generalized Retrieval Intent Provisioning) - A reactive dataflow library for unified state management",
   "main": "./dist/index.js",
   "scripts": {
     "test": "vitest run --coverage",
     "build": "tsup",
     "dev": "tsup --watch"
   },
-  "keywords": [],
+  "keywords": ["react", "state-management", "reactive", "dataflow", "grip", "context-graph"],
   "author": "Gianni Mariani",
   "license": "MIT",
   "type": "commonjs",
@@ -48,7 +48,6 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@owebeeone/grip-core": "file:../grip-core",
-    "consola": "^3.4.2"
+    "@owebeeone/grip-core": "^0.2.1"
   }
 }

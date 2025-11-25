@@ -4,6 +4,24 @@
 
 grip-react is a powerful, reactive dataflow library that fundamentally decouples an application's components from its data sources. Instead of managing local, derived, and server state with different tools, grip-react provides a single, unified architecture built around a hierarchical "Context Graph." Components simply ask for data by a typed key, and the graph intelligently resolves and delivers it from the most appropriate provider.
 
+## **Architecture: Built on grip-core**
+
+grip-react is built on top of [`@owebeeone/grip-core`](https://www.npmjs.com/package/@owebeeone/grip-core), a framework-agnostic core runtime that provides the foundational GRIP (Generalized Retrieval Intent Provisioning) functionality. The core library has been split out to enable framework-agnostic usage and better separation of concerns.
+
+**What's in grip-core:**
+- Core GRIP engine (Grok) and Context Graph
+- All Tap implementations (AtomValueTap, FunctionTap, BaseAsyncTap, etc.)
+- Grip, Drip, and Context primitives
+- Query system and binding mechanisms
+- Async request state management
+
+**What's in grip-react:**
+- React-specific hooks (`useGrip`, `useTap`, `useChildContext`, etc.)
+- React Provider component (`GripProvider`)
+- React integration layer connecting hooks to the core engine
+
+The documentation below describes the complete GRIP system, including both core concepts (provided by grip-core) and React-specific APIs (provided by grip-react). When using grip-react, you get access to the full GRIP architecture through React-friendly hooks and components.
+
 ## **The Core Philosophy: The Unification of State**
 
 Modern React applications often contend with three distinct categories of state: local UI state, derived state computed from other state, and asynchronous server state. This typically leads to a fragmented toolkit: one library for simple global state (like Zustand), another for complex state machines (like Redux), and a third for server state management (like TanStack Query).
@@ -475,6 +493,8 @@ npm install @owebeeone/grip-react
 # or
 yarn add @owebeeone/grip-react
 ```
+
+**Note:** `@owebeeone/grip-core` will be automatically installed as a dependency. The core GRIP functionality is provided by grip-core, while grip-react adds the React-specific integration layer.
 
 ### **Core Hooks**
 
