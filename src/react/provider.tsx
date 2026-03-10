@@ -19,7 +19,7 @@
  */
 
 import React, { createContext, useContext, useMemo } from "react";
-import { Grok, GripContextLike as GCtx, GripContextLike, Grip } from "@owebeeone/grip-core";
+import { Grok, type GripContext as GCtx, type GripContextLike } from "@owebeeone/grip-core";
 
 /**
  * Runtime configuration containing GROK engine and context.
@@ -27,7 +27,7 @@ import { Grok, GripContextLike as GCtx, GripContextLike, Grip } from "@owebeeone
  * Provides access to both the GROK engine and the current context
  * for React components that need to interact with the GRIP system.
  */
-type Runtime = { grok: Grok; context: GCtx };
+type Runtime = { grok: Grok; context: GripContextLike };
 
 /**
  * React context for providing GRIP runtime to components.
@@ -49,7 +49,11 @@ const GripReactCtx = createContext<Runtime | null>(null);
  * @param props.context - Optional context to use (defaults to grok.mainContext)
  * @param props.children - React children to render
  */
-export function GripProvider(props: { grok: Grok; context?: GCtx; children: React.ReactNode }) {
+export function GripProvider(props: {
+  grok: Grok;
+  context?: GripContextLike;
+  children: React.ReactNode;
+}) {
   const defaultCtx = props.context ?? props.grok.mainContext;
   const value = useMemo<Runtime>(() => ({ grok: props.grok, context: defaultCtx }), [props.grok, defaultCtx]);
   return <GripReactCtx.Provider value={value}>{props.children}</GripReactCtx.Provider>;
@@ -71,35 +75,41 @@ export function useRuntime(): Runtime {
 }
 
 /**
- * Creates a child context from either an explicit parent or the provider's context.
+ * Returns a deterministic named child context from either an explicit parent
+ * or the provider's context.
  * 
- * This hook creates a new child context that can be used for component-specific
- * data or parameter overrides. The child context is recreated whenever the parent
- * context changes.
+ * Named child contexts are required for persistence-friendly graph structure.
  * 
+ * @param name - Deterministic child context name scoped to the parent context
  * @param parent - Optional parent context (defaults to provider's context)
- * @returns A new child context
+ * @returns The named child context
  */
-export function useChildContext(parent?: GCtx): GCtx {
+export function useChildContext(name: string, parent?: GCtx): GCtx {
   const { context: parentCtx } = useRuntime();
-  return useMemo(() => (parent ?? parentCtx).getGripConsumerContext().createChild(), [parent, parentCtx]);
+  return useMemo(
+    () => (parent ?? parentCtx).getGripConsumerContext().getOrCreateChild(name),
+    [name, parent, parentCtx],
+  );
 }
 
 /**
  * Creates a memoized child context that never changes.
  * 
- * Similar to useChildContext, but the created context is memoized and
- * never changes during the component's lifetime. This is useful for
- * contexts that should remain stable across re-renders.
+ * Similar to useChildContext, but the resolved named child context is memoized
+ * for the component lifetime.
  * 
+ * @param name - Deterministic child context name scoped to the parent context
  * @param parent - Optional parent context (defaults to provider's context)
- * @returns A stable child context that never changes
+ * @returns A stable named child context
  */
-export function useLocalContext(parent?: GripContextLike): GripContextLike {
+export function useLocalContext(name: string, parent?: GripContextLike): GCtx {
   const { context: providerCtx } = useRuntime();
-  const ref = React.useRef<GripContextLike | null>(null);
+  const ref = React.useRef<GCtx | null>(null);
   if (ref.current === null) {
-    ref.current = (parent ?? providerCtx).getGripConsumerContext().createChild();
+    ref.current = (parent ?? providerCtx).getGripConsumerContext().getOrCreateChild(name);
   }
-  return ref.current;
+  return ref.current!;
 }
+
+export const useNamedChildContext = useChildContext;
+export const useNamedLocalContext = useLocalContext;
