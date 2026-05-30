@@ -30,7 +30,17 @@
 
 import { useSyncExternalStore, useMemo, useEffect, useCallback } from "react";
 import type React from "react";
-import { Grip, GripContext, GripContextLike, Tap, createAtomValueTap, AtomTap, AtomTapHandle } from "@owebeeone/grip-core";
+import { Grip, createAtomValueTap } from "@owebeeone/grip-core";
+import type {
+  AtomTap,
+  AtomTapHandle,
+  ChildContextOptions,
+  GripContext,
+  GripContextLike,
+  MatchingContext,
+  MatchingContextOptions,
+  Tap,
+} from "@owebeeone/grip-core";
 import { useRuntime } from "./provider";
 
 /**
@@ -69,7 +79,7 @@ import { useRuntime } from "./provider";
 export function useAtomValueTap<TGrip>(
   grip: Grip<TGrip | undefined>,
   opts: {
-    ctx?: GripContext;
+    ctx?: GripContextLike;
     initial: NonNullable<TGrip>;
     tapGrip?: Grip<AtomTapHandle<NonNullable<TGrip>>>;
   },
@@ -79,7 +89,7 @@ export function useAtomValueTap<TGrip>(
 export function useAtomValueTap<TGrip>(
   grip: Grip<TGrip>,
   opts?: {
-    ctx?: GripContext;
+    ctx?: GripContextLike;
     initial?: TGrip;
     tapGrip?: Grip<AtomTapHandle<TGrip>>;
   },
@@ -89,7 +99,7 @@ export function useAtomValueTap<TGrip>(
 export function useAtomValueTap<TGrip>(
   grip: Grip<TGrip>,
   opts?: {
-    ctx?: GripContext;
+    ctx?: GripContextLike;
     initial?: TGrip;
     tapGrip?: Grip<AtomTapHandle<TGrip>>;
   },
@@ -165,7 +175,7 @@ export function useGrip<T>(grip: Grip<T>, ctx?: GripContext | GripContextLike): 
  */
 export function useTap(
   factory: () => Tap,
-  opts?: { ctx?: GripContext; deps?: React.DependencyList }, // deps to control re-creation
+  opts?: { ctx?: GripContextLike; deps?: React.DependencyList }, // deps to control re-creation
 ): void {
   const { context: providerCtx } = useRuntime();
   const ctx = opts?.ctx ?? providerCtx;
@@ -177,6 +187,50 @@ export function useTap(
       ctx.getGripHomeContext().unregisterTap(tap);
     };
   }, [ctx, tap]);
+}
+
+export function useKeyedChildContext(
+  key: string,
+  opts?: { parent?: GripContextLike; init?: (ctx: GripContext) => void } & ChildContextOptions,
+): GripContext {
+  const { context: providerCtx } = useRuntime();
+  const parent = opts?.parent ?? providerCtx;
+  return useMemo(
+    () =>
+      parent
+        .getGripConsumerContext()
+        .getOrCreateChildContext(key, opts?.init, { id: opts?.id, priority: opts?.priority }),
+    [key, opts?.id, opts?.init, opts?.priority, parent],
+  );
+}
+
+export function useKeyedMatchingContext(
+  key: string,
+  opts?: {
+    parent?: GripContextLike;
+    init?: (ctx: MatchingContext) => void;
+  } & MatchingContextOptions,
+): MatchingContext {
+  const { context: providerCtx } = useRuntime();
+  const parent = opts?.parent ?? providerCtx;
+  return useMemo(
+    () =>
+      parent.getGripConsumerContext().getOrCreateMatchingContext(key, opts?.init, {
+        sourceId: opts?.sourceId,
+        presentationId: opts?.presentationId,
+        sourcePriority: opts?.sourcePriority,
+        presentationPriority: opts?.presentationPriority,
+      }),
+    [
+      key,
+      opts?.init,
+      opts?.presentationId,
+      opts?.presentationPriority,
+      opts?.sourceId,
+      opts?.sourcePriority,
+      parent,
+    ],
+  );
 }
 
 /**

@@ -1,8 +1,24 @@
 import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { GripRegistry, GripOf, Grok, createAtomValueTap, AtomTap, AtomValueTap, Tap } from '@owebeeone/grip-core';
-import { GripProvider, useGrip, useAtomValueTap, useTap } from '../src';
+import {
+  GripRegistry,
+  GripOf,
+  Grok,
+  createAtomValueTap,
+  AtomTap,
+  AtomValueTap,
+  MatchingContext,
+  Tap,
+} from '@owebeeone/grip-core';
+import {
+  GripProvider,
+  useGrip,
+  useAtomValueTap,
+  useKeyedChildContext,
+  useKeyedMatchingContext,
+  useTap,
+} from '../src';
 
 function wrapperWith(grok: Grok) {
   return ({ children }: { children: React.ReactNode }) => (
@@ -85,5 +101,53 @@ describe('react hooks', () => {
     unmount();
     const { result: after } = renderHook(() => useGrip(VALUE), { wrapper: wrapperWith(grok) });
     expect(after.current).toBe('init');
+  });
+
+  it('useAtomValueTap and useTap accept context-like containers', () => {
+    const registry = new GripRegistry();
+    const defineGrip = GripOf(registry);
+    const ATOM_VALUE = defineGrip<string>('Hooks.ContextLike.Atom', 'atom-default');
+    const TAP_VALUE = defineGrip<string>('Hooks.ContextLike.Tap', 'tap-default');
+    const grok = new Grok(registry);
+    const matching = grok.mainPresentationContext.getOrCreateMatchingContext('react:context-like');
+
+    const { result, rerender } = renderHook(
+      () => {
+        useAtomValueTap(ATOM_VALUE, { ctx: matching, initial: 'atom-live' });
+        useTap(() => createAtomValueTap(TAP_VALUE, { initial: 'tap-live' }) as unknown as Tap, {
+          ctx: matching,
+        });
+        return {
+          atomValue: useGrip(ATOM_VALUE, matching),
+          tapValue: useGrip(TAP_VALUE, matching),
+        };
+      },
+      { wrapper: wrapperWith(grok) }
+    );
+
+    rerender();
+    expect(result.current.atomValue).toBe('atom-live');
+    expect(result.current.tapValue).toBe('tap-live');
+  });
+
+  it('keyed context hooks reuse contexts for stable keys', () => {
+    const registry = new GripRegistry();
+    const grok = new Grok(registry);
+
+    const { result, rerender } = renderHook(
+      () => ({
+        child: useKeyedChildContext('weather:A'),
+        matching: useKeyedMatchingContext('coin:A'),
+      }),
+      { wrapper: wrapperWith(grok) }
+    );
+
+    const firstChild = result.current.child;
+    const firstMatching = result.current.matching;
+    rerender();
+
+    expect(result.current.child).toBe(firstChild);
+    expect(result.current.matching).toBe(firstMatching);
+    expect(result.current.matching).toBeInstanceOf(MatchingContext);
   });
 });
