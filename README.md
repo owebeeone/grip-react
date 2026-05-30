@@ -10,7 +10,7 @@ grip-react is built on top of [`@owebeeone/grip-core`](https://www.npmjs.com/pac
 
 **What's in grip-core:**
 - Core GRIP engine (Grok) and Context Graph
-- All Tap implementations (AtomValueTap, FunctionTap, BaseAsyncTap, etc.)
+- All Tap implementations (AtomValueTap, FunctionTap, BaseAsyncTap, AsyncStreamMultiTap, etc.)
 - Grip, Drip, and Context primitives
 - Query system and binding mechanisms
 - Async request state management
@@ -498,18 +498,47 @@ yarn add @owebeeone/grip-react
 
 ### **Core Hooks**
 
-* useGrip(grip, \[context\]): Reads a reactive value from the specified Grip. Subscribes the component to updates.  
-* useTap(factory, \[options\]): Registers a Tap instance for the component's lifecycle. The Tap is created using the factory function and is automatically unregistered on unmount.  
-* useChildContext(\[parentContext\]): Creates a new, isolated child GripContext that inherits from the parent.  
-* useGripSetter(handleGrip, \[context\]): A convenience hook that retrieves a Tap handle and returns a stable setter function for updating its state.  
+* useGrip(grip, \[context\]): Reads a reactive value from the specified Grip. Subscribes the component to updates. Accepts `GripContextLike` (including `MatchingContext`); reads from the consumer/presentation side when a container is passed.
+* useTap(factory, \[options\]): Registers a Tap instance for the component's lifecycle. Registers at `ctx.getGripHomeContext()`. The Tap is created using the factory function and is automatically unregistered on unmount.
+* useChildContext(\[parentContext\]): Creates a new, isolated child GripContext that inherits from the parent.
+* useKeyedChildContext(key, \[options\]): Returns a cached child context for a stable key. `options.init` runs once on first creation — use a stable named function, not an inline closure that changes every render.
+* useKeyedMatchingContext(key, \[options\]): Returns a cached `MatchingContext` (`home` → `presentation` hierarchy) for matcher-based provider selection per pane/column. Same init stability rules as `useKeyedChildContext`.
+* useAtomValueTap(grip, \[options\]): Creates/registers an atom tap; `options.ctx` accepts `GripContextLike` (registers on home context of a matching container).
+* useGripSetter(handleGrip, \[context\]): A convenience hook that retrieves a Tap handle and returns a stable setter function for updating its state.
 * useGripState(valueGrip, handleGrip, \[context\]): Provides a useState-like API \[value, setValue\] for a Grip controlled by an AtomTap.
+
+#### Keyed contexts: child vs matching
+
+| Hook | Use when |
+|------|----------|
+| `useKeyedChildContext` | Pane needs isolated params/outputs; one provider path (weather column). |
+| `useKeyedMatchingContext` | Pane selects among competing taps via matcher bindings (mock vs live feed per column). |
+
+Example (coin stream demo):
+
+```tsx
+function initCoinMatcher(ctx: MatchingContext) {
+  ctx.addBinding({ id: "mock", query: withOneOf(SOURCE, "mock", 10).build(), tap: mockTapFactory, baseScore: 5 });
+  ctx.addBinding({ id: "live", query: withOneOf(SOURCE, "live", 10).build(), tap: liveTapFactory, baseScore: 5 });
+}
+
+function CoinColumn({ columnId }: { columnId: string }) {
+  const ctx = useKeyedMatchingContext(`coin:${columnId}`, { init: initCoinMatcher });
+  const sourceTap = useAtomValueTap(SOURCE, { ctx, initial: "mock", tapGrip: SOURCE_TAP });
+  const price = useGrip(PRICE, ctx);
+  // ...
+}
+```
+
+See `grip-react-demo` (`CoinColumn.tsx`, `cointaps.ts`) and `grip-core/GRIP_STREAM_TAPS.md`.
 
 ### **Core Factories**
 
-* GripRegistry and GripOf(registry): Define and register new Grip instances.  
-* createAtomValueTap(valueGrip, \[options\]): Creates a Tap for managing simple, atom-style local state.  
-* createFunctionTap(config): Creates a Tap for deriving state from one or more input Grips.  
-* createAsyncValueTap(config) / createAsyncMultiTap(config): Creates Taps for handling asynchronous operations like API calls, with built-in support for caching, cancellation, and more.
+* GripRegistry and GripOf(registry): Define and register new Grip instances.
+* createAtomValueTap(valueGrip, \[options\]): Creates a Tap for managing simple, atom-style local state.
+* createFunctionTap(config): Creates a Tap for deriving state from one or more input Grips.
+* createAsyncValueTap(config) / createAsyncMultiTap(config): One-shot async fetch/response taps with caching and cancellation.
+* createAsyncStreamMultiTap(config): Long-lived stream taps (websockets, tick feeds). See `grip-core/GRIP_STREAM_TAPS.md`.
 
 #### createFunctionTap config (summary)
 
