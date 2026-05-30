@@ -55,6 +55,6 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@owebeeone/grip-core": "^0.2.1"
+    "@owebeeone/grip-core": "file:../grip-core"
   }
 }
