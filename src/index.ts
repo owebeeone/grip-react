@@ -24,3 +24,4 @@ export { GraphDumpButton } from "./react/GraphDumpButton";
 // React integration
 export * from "./react/provider";
 export * from "./react/hooks";
+export * from "./react/inputs";

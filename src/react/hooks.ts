@@ -28,7 +28,7 @@
  * - useRadioGrip: Radio button groups
  */
 
-import { useSyncExternalStore, useMemo, useEffect, useCallback } from "react";
+import { useSyncExternalStore, useMemo, useEffect, useCallback, useState } from "react";
 import type React from "react";
 import { Grip, createAtomValueTap } from "@owebeeone/grip-core";
 import type {
@@ -409,6 +409,96 @@ export function useTextGrip<T = string>(
     [setValue, parse],
   );
   return { value: uiValue, onChange };
+}
+
+export type BufferedTextGripUpdateMode = "change" | "blur";
+
+export interface BufferedTextGripOptions<T = string> {
+  ctx?: GripContext | GripContextLike;
+  parse?: (s: string) => T | undefined;
+  format?: (v: T | undefined) => string;
+  update?: BufferedTextGripUpdateMode;
+  warnOnMissingHandle?: boolean;
+}
+
+export interface BufferedTextGripBinding {
+  value: string;
+  focused: boolean;
+  commit: () => void;
+  reset: () => void;
+  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+  onFocus: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+  onBlur: (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+}
+
+/**
+ * Text binding for live GRIP values that preserves the user's local edit buffer.
+ *
+ * While the field is focused, the returned `value` is held from local input state
+ * instead of being overwritten by incoming Grip updates. This prevents cursor
+ * jumps in text inputs and textareas while still allowing the binding to publish
+ * changes to the Grip on every keystroke by default. On blur, the local draft is
+ * committed and the field resumes rendering directly from the Grip value.
+ */
+export function useBufferedTextGrip<T = string>(
+  grip: Grip<T>,
+  tapGrip: Grip<AtomTapHandle<T>>,
+  opts?: BufferedTextGripOptions<T>,
+): BufferedTextGripBinding {
+  const { ctx, parse, format, update = "change", warnOnMissingHandle = true } = opts ?? {};
+  const value = useGrip(grip, ctx);
+  const handle = useGrip(tapGrip, ctx);
+  const gripText = (format ? format(value) : (value as unknown as string | undefined)) ?? "";
+  const [focused, setFocused] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const publish = useCallback(
+    (s: string) => {
+      const next = parse ? parse(s) : (s as unknown as T);
+      if (next === undefined) return;
+      if (handle) {
+        handle.set(next);
+      } else if (warnOnMissingHandle) {
+        console.warn(`useBufferedTextGrip: handle is undefined - no tap registered for: ${tapGrip.key}?`);
+      }
+    },
+    [handle, parse, tapGrip, warnOnMissingHandle],
+  );
+
+  const currentText = focused ? (draft ?? gripText) : gripText;
+
+  const commit = useCallback(() => {
+    publish(currentText);
+  }, [currentText, publish]);
+
+  const reset = useCallback(() => {
+    setDraft(gripText);
+  }, [gripText]);
+
+  const onFocus = useCallback((e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setFocused(true);
+    setDraft(e.currentTarget.value);
+  }, []);
+
+  const onChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const s = e.currentTarget.value;
+      setDraft(s);
+      if (update === "change") publish(s);
+    },
+    [publish, update],
+  );
+
+  const onBlur = useCallback(
+    (e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      publish(e.currentTarget.value);
+      setFocused(false);
+      setDraft(null);
+    },
+    [publish],
+  );
+
+  return { value: currentText, focused, commit, reset, onChange, onFocus, onBlur };
 }
 
 /**
