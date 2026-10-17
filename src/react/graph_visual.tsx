@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import type { Grok, GripContextNode, Grip, Drip, Tap } from "@owebeeone/grip-core";
+import type { Grok, GripContextNode, Grip } from "@owebeeone/grip-core";
 import { GraphDumpKeyRegistry } from "@owebeeone/grip-core";
 
 export type GripGraphVisualizerProps = {
@@ -23,15 +23,16 @@ export type GripGraphVisualizerProps = {
 type VisualNode = {
   id: string;
   display_id: string;
-  node: GripContextNode;
+  nodeId: string;
+  hasIssues: boolean;
   live: boolean;
   layer: number;
   x: number;
   y: number;
   width: number;
   height: number;
-  producers: Set<any>; // unique ProducerRecord instances
-  consumers: Array<{ grip: Grip<any>; drip?: Drip<any>; value: any }>; // snapshot of current values
+  producers: string[];
+  consumers: Array<{ gripKey: string; live: boolean; value: string }>;
 };
 
 type ParentEdge = { kind: "parent"; id: string; from: string; to: string };
@@ -40,7 +41,7 @@ type ProviderEdge = {
   id: string;
   from: string; // provider context id
   to: string; // destination context id
-  grips: Array<{ grip: Grip<any>; value: any }>; // snapshot values at destination
+  grips: Array<{ gripKey: string; value: string }>;
 };
 
 const CARD_WIDTH = 280;
@@ -96,12 +97,13 @@ function uniqueProducerRecords(node: GripContextNode): Set<any> {
   return recs;
 }
 
-function snapshotConsumers(node: GripContextNode): Array<{ grip: Grip<any>; drip?: Drip<any>; value: any }> {
-  const out: Array<{ grip: Grip<any>; drip?: Drip<any>; value: any }> = [];
+function snapshotConsumers(node: GripContextNode): VisualNode['consumers'] {
+  const out: VisualNode['consumers'] = [];
   for (const [grip, wr] of node.get_consumers()) {
     const d = wr?.deref();
-    if (d) out.push({ grip, drip: d as unknown as Drip<any>, value: (d as any).get() });
-    else out.push({ grip, drip: undefined, value: (grip as any).defaultValue });
+    // Copy display data only. Drips and handle values can retain contexts;
+    // neither should become an owner just because the inspector is open.
+    out.push({ gripKey: grip.key, live: !!d, value: String(d ? d.get() : grip.defaultValue) });
   }
   return out;
 }
@@ -125,14 +127,15 @@ function buildVisual(
     const vn: VisualNode = {
       id: keys.getContextKey(node),
       display_id: `${keys.getContextKey(node)} ${node.id}`,
-      node,
+      nodeId: node.id,
+      hasIssues: (node as any)._sanityIssues?.length > 0,
       live,
       layer: l,
       x: 0,
       y: 0,
       width: CARD_WIDTH,
       height: CARD_HEIGHT,
-      producers: uniqueProducerRecords(node),
+      producers: Array.from(uniqueProducerRecords(node)).map(rec => rec.tap?.constructor?.name ?? 'Tap'),
       consumers: snapshotConsumers(node),
     };
     if (!layers.has(l)) layers.set(l, []);
@@ -178,7 +181,7 @@ function buildVisual(
   // Parent edges
   const parentEdges: ParentEdge[] = [];
   for (const vn of Array.from(layers.values()).flat()) {
-    for (const p of vn.node.get_parent_nodes()) {
+    for (const p of graph.get(vn.nodeId)!.get_parent_nodes()) {
       parentEdges.push({ kind: "parent", id: `parent:${vn.id}->${keys.getContextKey(p)}`, from: vn.id, to: keys.getContextKey(p) });
     }
   }
@@ -187,13 +190,13 @@ function buildVisual(
   const providerEdges: ProviderEdge[] = [];
   for (const vn of Array.from(layers.values()).flat()) {
     // For each unique producer record
-    for (const rec of vn.producers) {
+    for (const rec of uniqueProducerRecords(graph.get(vn.nodeId)!)) {
       for (const [destNode, destination] of rec.getDestinations()) {
         const destCtx = destNode.get_context();
         if (!destCtx) continue;
         const grips = Array.from(destination.getGrips() as ReadonlySet<Grip<any>>).map((g: Grip<any>) => {
           const val = destCtx._getContextNode().getLiveDripForGrip(g as any)?.get();
-          return { grip: g, value: val };
+          return { gripKey: g.key, value: String(val) };
         });
         providerEdges.push({ kind: "provider", id: `prov:${vn.id}->${keys.getContextKey(destNode)}:${providerEdges.length}`, from: vn.id, to: keys.getContextKey(destNode), grips });
       }
@@ -265,16 +268,16 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
 
   const nodeCard = (vn: VisualNode) => {
     // Flag contexts with sanity issues in red
-    const hasIssues = (vn.node as any)._sanityIssues?.length > 0;
+    const hasIssues = vn.hasIssues;
     const headerBg = hasIssues ? "#c62828" : (vn.live ? "#1e88e5" : "#9e9e9e");
     const cardOpacity = !vn.live && showReapedContexts ? 0.6 : vn.live ? 1 : showReapedContexts ? 0.6 : 0; // hide reaped if not showing
     if (!vn.live && !showReapedContexts) return null;
     const consumers = vn.consumers
-      .filter((c) => showUnresolvedConsumers || c.drip)
+      .filter((c) => showUnresolvedConsumers || c.live)
       .slice(0, MAX_CARD_ITEMS);
-    const producersCount = vn.producers.size;
+    const producersCount = vn.producers.length;
     return (
-      <div key={vn.id} role="group" aria-label={`Context ${vn.node.id}`} style={{ position: "absolute", left: vn.x, top: vn.y, width: vn.width, height: vn.height, border: "1px solid #ddd", borderRadius: 8, background: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", opacity: cardOpacity }}>
+      <div key={vn.id} role="group" aria-label={`Context ${vn.nodeId}`} style={{ position: "absolute", left: vn.x, top: vn.y, width: vn.width, height: vn.height, border: "1px solid #ddd", borderRadius: 8, background: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", opacity: cardOpacity }}>
         <div style={{ background: headerBg, color: "#fff", padding: "6px 10px", borderTopLeftRadius: 8, borderTopRightRadius: 8, fontSize: 13, display: "flex", justifyContent: "space-between" }}>
           <div title={vn.display_id} style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: vn.width - 90 }}>{vn.display_id}{hasIssues ? " · Drip unsubscribe failed" : ""}</div>
           <div style={{ fontSize: 12, opacity: 0.9 }}>{producersCount} taps · {vn.consumers.length} drips</div>
@@ -283,8 +286,8 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Taps</div>
             <div style={{ maxHeight: 90, overflow: "auto" }}>
-              {producersCount === 0 ? <div style={{ color: "#999" }}>—</div> : Array.from(vn.producers).slice(0, MAX_CARD_ITEMS).map((rec: any, i: number) => (
-                <div key={i} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec?.tap?.constructor?.name ?? "Tap"}</div>
+              {producersCount === 0 ? <div style={{ color: "#999" }}>—</div> : vn.producers.slice(0, MAX_CARD_ITEMS).map((name, i) => (
+                <div key={i} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
               ))}
             </div>
           </div>
@@ -292,8 +295,8 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Drips</div>
             <div style={{ maxHeight: 90, overflow: "auto" }}>
               {consumers.length === 0 ? <div style={{ color: "#999" }}>—</div> : consumers.map((c, i) => (
-                <div key={i} title={(c.grip as any).key} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(c.grip as any).key}</span>
+                <div key={i} title={c.gripKey} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.gripKey}</span>
                   <span title={String(c.value)} style={{ flex: 1, minWidth: 0, color: "#555", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{String(c.value)}</span>
                 </div>
               ))}
@@ -329,7 +332,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     const x2 = to.x + (horizontal ? 0 : to.width / 2);
     const y2 = to.y + (horizontal ? to.height / 2 : 0);
     const curve = horizontal ? `C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}` : `C ${x1} ${(y1 + y2) / 2}, ${x2} ${(y1 + y2) / 2}, ${x2} ${y2}`;
-    const title = e.grips.map((g) => `${(g.grip as any).key}: ${String(g.value)}`).join("\n");
+    const title = e.grips.map((g) => `${g.gripKey}: ${g.value}`).join("\n");
     return <path key={e.id} data-edge-kind="provider" d={`M ${x1} ${y1} ${curve}`} stroke={DATA_EDGE_COLOR} fill="none" strokeWidth={2} opacity={0.85} markerEnd="url(#arrow-green)"><title>{title}</title></path>;
   }) : [];
 

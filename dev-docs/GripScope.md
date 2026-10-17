@@ -50,6 +50,14 @@ re-entry. Two GC regressions failed before its fix; a third verifies that an
 entire unused group can still be collected. The fix retains the wrapper through
 weak keys on its inner contexts, without permanently retaining unused scopes.
 
+Populated-scope regressions also check that registered taps do not root an
+abandoned context through the graph index, and that a detached tap releases its
+parameter context. Live child contexts retain the ancestors needed for inherited
+providers. The collectible context owns its registrations; the diagnostic node
+shell can outlive it until the periodic sweep removes the empty leaf nodes.
+The graph viewer stores display data rather than live drips, producer records,
+or handle values, so inspecting a scope does not become an extra lifetime owner.
+
 Run the React tests and build from this package:
 
 ```sh

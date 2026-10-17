@@ -12,6 +12,14 @@
 - Complete weather and counter examples, executable composition and isolation
   tests, and guidance for incremental adoption and LLM-assisted implementation.
 
+### Fixed
+
+- Abandoned populated scopes can be collected without being retained by the
+  engine's graph index. Live children retain their inherited providers, and
+  detached taps release their parameter context.
+- Graph inspection stores display data instead of retaining live drips,
+  producer records, or handle values that would keep contexts alive.
+
 ### GripScope availability
 
 `GripScope` is introduced in this release. It is implemented and exported in
