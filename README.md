@@ -743,11 +743,12 @@ evolves. The return comes from work that no longer needs doing.
 **Beware horizon blindness: unfamiliar abstractions are easy to count; familiar
 plumbing is easy to overlook.**
 
-Dismissing GRIP because it introduces new concepts leaves half the comparison
-undone. Count the connection code, synchronization, lifecycle handling, and test
-setup it replaces. If you conclude that GRIP costs more, identify the additional
-work for equivalent behavior. "It's different" doesn't establish that, and "the
-application is simple" doesn't make separation and testability worthless.
+GRIP is a practical alternative for ordinary React applications. It provides
+supplier-independent components, independently testable producers, and inspectable
+data flow through one consistent mechanism. A fair comparison counts both the
+concepts introduced and the connection, synchronization, and lifecycle code
+eliminated. Unfamiliarity alone doesn't establish greater complexity or
+development cost; that conclusion needs a concrete account of the extra work.
 
 ## Add one feature to an existing application
 
