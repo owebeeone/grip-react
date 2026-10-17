@@ -166,6 +166,10 @@ to detailed documentation are implemented. This work does not publish a release.
   declarations, producer switch, graph/source controls, and composition tests
   establish the payoff before the growth and cost arguments. Display isolation
   remains documented with the detailed tests.
+- A bounded-feature trial invitation leads into implementation guidance for
+  coding agents: taps own state and coordination, producers declare inputs,
+  scopes have stable UI identities, adapters preserve external state ownership,
+  and generated code is checked against the actual API and executable tests.
 - The complete introduction is in `grip-react-demo/src/readme/`. A minimal
   counter at `/readme-counter.html` follows the weather demonstration in the
   README as a complete quick start; weather runs at `/readme-weather.html`.

@@ -11,6 +11,7 @@ dynamically, keeping consumers connected to the right producers as things
 change. TypeScript knows the values and actions each component consumes.
 
 [See the producer switch](#watch-the-connections-change) ·
+[Building with an LLM](#building-with-an-llm) ·
 [Install](#install-the-published-package) ·
 [Run the examples](#run-the-development-examples) · [React API](#react-api)
 
@@ -86,6 +87,21 @@ destinationParamGrips: [LOCATION],
 The weather producers share an output contract, while their input requirements
 differ. GRIP resolves those requirements from each column's context. The column
 above reads the same grips throughout.
+
+### Dynamic linking for application dataflow
+
+If you know dynamic linking with ELF shared libraries, GRIP uses a familiar
+principle: declare what is required and let a runtime resolve the implementation.
+The [dynamic linker](https://man7.org/linux/man-pages/man8/ld.so.8.html) resolves
+imported symbols to implementations; GRIP resolves typed data and action
+requirements to producers using the requesting context. Think of it as
+**dynamic linking for application dataflow in React**.
+
+GRIP applies that principle to reactive connections, including each producer's
+own input requirements. In this example, the replacement weather producer needs
+coordinates, which the geocoder supplies from the column's location. GRIP
+resolves the chain and maintains the connections as contexts and producers
+change. The display keeps the same contracts throughout.
 
 ## Watch the connections change
 
@@ -199,6 +215,49 @@ GRIP provides typed contracts, independent producers, and connection management
 from the first feature. As requirements grow, add scopes, derived values, or
 asynchronous sources using the same model. The building blocks are already
 available; you don't have to invent new plumbing for each stage.
+
+### Try GRIP in one feature
+
+Keep the application, state management, and services you already have. Wrap a
+panel in `GripProvider` and use a small
+[adapter](#add-one-feature-to-an-existing-application) to expose existing values
+and actions through typed grips. The existing system can remain the source of
+truth while the panel becomes independently testable and supplier-agnostic.
+Adoption can grow one feature at a time.
+
+Choose a feature you expect to change. Test its display with supplied values,
+inspect its data connections, then introduce a different source or an additional
+producer dependency. See which parts stay untouched and how much coordination
+GRIP handles for you. That gives you a practical basis for deciding where to use
+it next, with a working feature as the result of the trial.
+
+## Building with an LLM
+
+Give the coding agent the complete examples and these implementation rules:
+
+- **Put state and coordination in taps.** Consumers read typed values and
+  actions through `useGrip` and the GRIP binding helpers. Keep derived values,
+  fetching, and subscriptions in producers, instead of rebuilding that machinery
+  with React state and effect hooks in each display.
+- **Declare producer dependencies.** Use destination parameters for inputs
+  selected by the consumer's context. Each producer declares its own needs;
+  the UI does not assemble the dependency sequence or import concrete producers.
+- **Compose stable UI scopes.** Scope keys identify columns or panes, not
+  changing data such as cities. Initialize a new context once, then change its
+  values through supplied mutators. Create the runtime outside rendering.
+- **Keep one owner for existing state.** During incremental adoption, an adapter
+  exposes the existing system's values and actions. Mutations call that system;
+  its updates flow back through the adapter. The adapter owns its external
+  subscription and cleanup. Producers own resources such as timers and requests.
+- **Use the actual API and executable examples.** The compact declarations
+  above are excerpts; the full configurations and setup are below. Check the
+  installed version before using an API marked unreleased, including `GripScope`.
+
+Verify [the dependency chain and producer switch](#verify-the-composition),
+[display isolation](#test-the-component-with-supplied-values), and
+[producer isolation](#test-the-producer-without-react). Automated hook-import
+checks can [enforce the application architecture](#application-state-through-usegrip)
+for generated code as well as human-written changes.
 
 ## Install the published package
 
