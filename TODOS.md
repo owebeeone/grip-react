@@ -1,40 +1,47 @@
+# GRIP React TODOs
 
+This backlog covers React integration and documentation. Core-engine proposals
+and the disposition of older entries are recorded in
+[the TODO review](dev-docs/TodoReview.md). Verification items below are not
+claims of known defects.
 
-* Make the naked `new GripContext(..)` illegal so that we force the use of Grok or a parent context.
+## README and examples
 
-### Core engine and resolver
-- Track grips per tap per context so unregister is exact (no cache-key scan). Use resolver.unregisterLocalProvider(ctxId, gripKey).
-- Add resolver tests for multi-parent DAGs and priority overshadowing (same/different priorities).
-- Ensure resolver mappings update when parent links change post-creation; avoid doing setParents inside query.
-- Consider exposing a read-only debug snapshot of resolver state for tests/devtools.
+- [ ] Carry out the [README improvement plan](dev-docs/ReadmePlan.md): lead with
+  a concrete React benefit, consolidate the weather example, show isolated
+  testing, and verify the runnable setup and snippets.
+- [ ] Locate and check the current weather demo. Confirm its destination and
+  home parameter declarations and interval cleanup. Investigate whether the
+  old `__weatherCache` workaround still exists before proposing a change.
+- [ ] Reconcile React-facing lifecycle guidance and links to the core
+  specifications with the current API. Remove references to unimplemented
+  historical API proposals rather than presenting them as available features.
 
-### Tap API and lifecycle
-- Implement connection-based production (onConnect/onDisconnect with per-context sinks) to avoid creating new drips on re-query.
-- Support multi-output taps efficiently (deliver to multiple grips via sinks, not per-grip drips).
-- Manage parameterGrips lifecycle: subscribe/unsubscribe tied to consumer presence; avoid leaks.
-- Provide an AtomTap helper for trivial app state (backed by a Drip), and deprecate direct setValue in favor of setDrip.
+## Subtree contexts
 
-### Context lifecycle and graph
-- Provide API to unregister a tap at a specific context: unregisterTapAt(ctx, tapId).
-- Strengthen GC: ensure GrokGraph removes nodes when contexts are reaped and there are no live consumers; avoid cleanup during delivery.
-- Optionally re-introduce per-node indices (localProviders/resolvedMap/dripByGrip) or document why resolver centralization suffices.
+- [x] Add `GripScope` using the existing keyed matching context and provider.
+  Initialize once per new live context, use UI-instance keys, and let descendants
+  read values and mutators without explicit context props. Weather and coin
+  columns in the demo now use this pattern. See [the contract](dev-docs/GripScope.md).
+- Defer an ordinary `useChildContext` initializer until there is a distinct use
+  case. The subtree initialization need is covered by `GripScope`.
 
-### React integration
-- Add `useChildContext(init?)` to allow creating a child with initial overrides atomically.
-- Consider `useContextWithGrok` that creates contexts via Grok to auto-register parents with resolver.
+## React lifecycle verification
 
-### Tests
-- Expand engine tests for:
-  - Multi-parent and priority overshadowing.
-  - Parameter-driven invalidation with multiple parameterGrips.
-  - Override precedence vs tap at equal/ancestor distances.
-  - Shared drip semantics across multiple consumers in same/different contexts.
+- [ ] Extend the existing hook tests for Strict Mode mounting, cleanup, and
+  remounting. Check that registration and subscriptions are not duplicated and
+  that cleanup leaves other consumers intact.
+- [ ] Verify behavior when the provider context or explicit parent changes,
+  including subscriptions, tap ownership, keyed initialization, and the
+  intentional lifetime-stable behavior of `useLocalContext`.
+- [ ] Verify independent consumers and parameter changes through the React
+  boundary. Reuse core coverage for resolver rules; add React tests for the
+  hook-specific setup, updates, and teardown.
 
-### Demo cleanup
-- WeatherTap: declare `parameterGrips: [WEATHER_LOCATION]` for clarity; manage per-location interval lifecycles (refcount or onFirst/Zero).
-- Remove demo-side `__weatherCache` hack or encapsulate it cleanly.
+The nine scope tests cover its initialization, Strict Mode, parent/key changes,
+inheritance, and external lifetime ownership. The broader hook verification
+items above remain open; they are not implied complete by that coverage.
 
-### Packaging and DX
-- Fix package.json `sideEffects`: set boolean false (no quotes).
-- Update GRIP_RESOLVER.md to reflect current engine wiring and planned sink-based API.
-- Publish a small “Getting Started” with examples (counter, calculator, weather).
+Record a failing regression before changing runtime behavior. Keep new
+core-engine defects or design proposals in core's development documentation,
+with a concrete reproduction or use case.

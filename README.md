@@ -153,40 +153,69 @@ This simple example showcases the core workflow: defining abstract data keys (Gr
 
 The Context Graph is grip-react's most powerful and defining feature. It is more than just a state container; it functions as a runtime Dependency Injection (DI) system for reactive data streams. In a typical DI system, a consumer requests a service by its type or token within a specific scope, and a container provides the appropriate implementation. grip-react mirrors this pattern: a component requests a Grip (the token) within its GripContext (the scope), and the grok engine (the container) traverses the context hierarchy to find the closest registered Tap (the service provider). The
 
-useChildContext hook allows for the creation of nested scopes, enabling fine-grained control over which "service" is provided where, facilitating the construction of highly modular and encapsulated applications.
+`GripScope` provides a keyed context to a React subtree. Descendants use ordinary
+GRIP hooks without passing context objects between components. The lower-level
+context hooks remain available when an application needs to manage contexts itself.
 
 ### **Example: Building Independent Weather Panels**
 
 A practical application of the Context Graph is creating multiple, independent instances of a component. Consider a dashboard displaying weather for several cities side-by-side. Each panel must manage its own location and data without interfering with the others.
 
-The demo application implements this pattern effectively. A WeatherPanel component renders multiple WeatherColumn instances. Crucially, inside each WeatherColumn, the useChildContext hook is called to create an isolated scope.
+The demo's `WeatherPanel` gives each column a scope and initializes its location
+atom. The key identifies the column, not its city. Changing the city updates that
+atom while preserving the scope.
 
 ```tsx
-// grip-react-demo/src/WeatherColumn.tsx [1]
-import { useGrip, useRuntime, useAtomValueTap } from '@owebeeone/grip-react';
-import { useMemo } from 'react';
-import { WEATHER_LOCATION, WEATHER_LOCATION_TAP, WEATHER_TEMP_C, WEATHER_HUMIDITY } from './grips.weather';
+// Within the application's GripProvider; weather providers are registered separately.
+import { GripScope, createAtomValueTap, useGrip, useSelectGrip } from '@owebeeone/grip-react';
+import { WEATHER_LOCATION, WEATHER_LOCATION_TAP, WEATHER_TEMP_C } from './grips.weather';
 
-export default function WeatherColumn(props: { title: string; initialLocation: string }) {
-  const { context: parentCtx } = useRuntime();
-  // Create a unique, isolated context for this column instance
-  const ctx = useMemo(() => parentCtx.getGripConsumerContext().createChild(), [parentCtx]);
+function WeatherColumn() {
+  const temperature = useGrip(WEATHER_TEMP_C);
+  const location = useSelectGrip(WEATHER_LOCATION, WEATHER_LOCATION_TAP);
+  return (
+    <section>
+      <select {...location} aria-label="Location">
+        <option>Sydney</option>
+        <option>Paris</option>
+      </select>
+      <output>{temperature ?? 'Loading'} °C</output>
+    </section>
+  );
+}
 
-  // Provide a location value inside this specific context
-  useAtomValueTap(WEATHER_LOCATION, {
-    ctx,
-    initial: props.initialLocation,
-    tapGrip: WEATHER_LOCATION_TAP,
-  });
-
-  // All these hooks now operate within the isolated 'ctx'
-  const temp = useGrip(WEATHER_TEMP_C, ctx);
-  const humidity = useGrip(WEATHER_HUMIDITY, ctx);
-  //...
+function WeatherColumns() {
+  return (
+    <>
+      <GripScope scopeKey="weather-column:1" init={ctx =>
+        ctx.getGripHomeContext().registerTap(createAtomValueTap(WEATHER_LOCATION, {
+          initial: 'Sydney', handleGrip: WEATHER_LOCATION_TAP,
+        }))
+      }>
+        <WeatherColumn />
+      </GripScope>
+      <GripScope scopeKey="weather-column:2" init={ctx =>
+        ctx.getGripHomeContext().registerTap(createAtomValueTap(WEATHER_LOCATION, {
+          initial: 'Paris', handleGrip: WEATHER_LOCATION_TAP,
+        }))
+      }>
+        <WeatherColumn />
+      </GripScope>
+    </>
+  );
 }
 ```
 
-Without the child context, all WeatherColumn instances would share a single WEATHER\_LOCATION value from their common parent. By creating a new child context for each column, every instance gets its own private scope. The useAtomValueTap call then registers a Tap for WEATHER\_LOCATION *within that specific child context*, effectively localizing the state. This demonstrates how the graph enables true component encapsulation, a pattern that is often cumbersome to achieve with traditional global state managers.
+Each column reads and changes its own location without knowing a column ID or
+assembling weather request parameters. Its provider resolves those parameters
+from the consuming column's context.
+
+`init` runs synchronously when a new keyed context is created, before children
+read it. Rerenders, location changes, and new inline callbacks reuse the existing
+live context without running `init` again. Keys are local to the enclosing context;
+using the same key there deliberately shares a scope. Unmounting does not retire
+an externally owned context. See the [scope lifecycle notes](dev-docs/GripScope.md)
+and the [runnable demo](https://github.com/owebeeone/grip-react-demo).
 
 ## **Mastering Data Flow with Taps**
 
