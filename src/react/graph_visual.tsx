@@ -48,6 +48,8 @@ const CARD_HEIGHT = 160;
 const H_GAP = 40;
 const V_GAP = 60;
 const PADDING = 24;
+const CONTEXT_EDGE_COLOR = "#aab5c2";
+const DATA_EDGE_COLOR = "#2e7d32";
 
 function computeLayers(graph: ReadonlyMap<string, GripContextNode>): Map<string, number> {
   // roots: nodes with no parents
@@ -244,7 +246,9 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     position: "relative",
     width: "100%",
     height: "100%",
-    overflow: "auto",
+    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
     background: "#fafafa",
     color: "#213547",
     textAlign: "left",
@@ -311,7 +315,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     const x2 = to.x + (horizontal ? to.width : to.width / 2);
     const y2 = to.y + (horizontal ? to.height / 2 : to.height);
     const curve = horizontal ? `C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}` : `C ${x1} ${(y1 + y2) / 2}, ${x2} ${(y1 + y2) / 2}, ${x2} ${y2}`;
-    return <path key={e.id} d={`M ${x1} ${y1} ${curve}`} stroke="#aab5c2" fill="none" strokeWidth={1} markerEnd="url(#arrow-grey)" />;
+    return <path key={e.id} d={`M ${x1} ${y1} ${curve}`} stroke={CONTEXT_EDGE_COLOR} fill="none" strokeWidth={1} markerEnd="url(#arrow-grey)" />;
   });
 
   const providerLines = showResolvedProviders ? providerEdges.map((e) => {
@@ -325,11 +329,22 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     const y2 = to.y + (horizontal ? to.height / 2 : 0);
     const curve = horizontal ? `C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}` : `C ${x1} ${(y1 + y2) / 2}, ${x2} ${(y1 + y2) / 2}, ${x2} ${y2}`;
     const title = e.grips.map((g) => `${(g.grip as any).key}: ${String(g.value)}`).join("\n");
-    return <path key={e.id} data-edge-kind="provider" d={`M ${x1} ${y1} ${curve}`} stroke="#2e7d32" fill="none" strokeWidth={2} opacity={0.85} markerEnd="url(#arrow-green)"><title>{title}</title></path>;
+    return <path key={e.id} data-edge-kind="provider" d={`M ${x1} ${y1} ${curve}`} stroke={DATA_EDGE_COLOR} fill="none" strokeWidth={2} opacity={0.85} markerEnd="url(#arrow-green)"><title>{title}</title></path>;
   }) : [];
 
   return (
-    <div ref={containerRef} className={className} style={containerStyle}>
+    <div className={className} style={containerStyle}>
+      <div role="note" aria-label="Graph legend" style={{ display: "flex", flexWrap: "wrap", gap: "8px 20px", padding: "8px 12px", fontSize: 12, flexShrink: 0, borderBottom: "1px solid #e2e6eb" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <span aria-hidden="true" style={{ width: 28, borderTop: `1px solid ${CONTEXT_EDGE_COLOR}` }} />
+          Context links: child → parent
+        </span>
+        {showResolvedProviders && <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <span aria-hidden="true" style={{ width: 28, borderTop: `2px solid ${DATA_EDGE_COLOR}` }} />
+          Data flow: provider → consumer
+        </span>}
+      </div>
+      <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
       {/* Content area sized to graph; centered */}
       <div style={{ position: "relative", width: Math.max(viewport.w, canvas.width * fittedScale), height: Math.max(viewport.h, canvas.height * fittedScale) }}>
       <div data-testid="graph-transform" style={{ position: "absolute", width: canvas.width, height: canvas.height,
@@ -340,10 +355,10 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
         <svg width={canvas.width} height={canvas.height} style={svgStyle}>
         <defs>
           <marker id="arrow-grey" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L6,3 L0,6 Z" fill="#bbb" />
+            <path d="M0,0 L6,3 L0,6 Z" fill={CONTEXT_EDGE_COLOR} />
           </marker>
           <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L8,4 L0,8 Z" fill="#2e7d32" />
+            <path d="M0,0 L8,4 L0,8 Z" fill={DATA_EDGE_COLOR} />
           </marker>
         </defs>
         {parentLines}
@@ -351,6 +366,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
         </svg>
         {/* Nodes */}
         {nodes.map(nodeCard)}
+      </div>
       </div>
       </div>
     </div>
