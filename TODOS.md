@@ -7,12 +7,14 @@ claims of known defects.
 
 ## README and examples
 
-- [ ] Carry out the [README improvement plan](dev-docs/ReadmePlan.md): lead with
+- [x] Carry out the [README improvement plan](dev-docs/ReadmePlan.md): lead with
   a concrete React benefit, consolidate the weather example, show isolated
   testing, and verify the runnable setup and snippets.
-- [ ] Locate and check the current weather demo. Confirm its destination and
-  home parameter declarations and interval cleanup. Investigate whether the
-  old `__weatherCache` workaround still exists before proposing a change.
+- [x] Locate the current weather demo and verify the introduction against
+  executable source. The small offline example is in the demo's `src/readme/`;
+  the full Weather tab retains live service integration.
+- [ ] Audit the full live weather demo's refresh interval lifecycle separately.
+  The introduction's fixture tests do not verify that timer or live API behavior.
 - [ ] Reconcile React-facing lifecycle guidance and links to the core
   specifications with the current API. Remove references to unimplemented
   historical API proposals rather than presenting them as available features.

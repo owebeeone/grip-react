@@ -1,580 +1,811 @@
+# GRIP React
 
+**Make your components testable and retargetable—without the wiring clutter.**
 
-# **grip-react: A Reactive Graph for Unified State Management in React**
+GRIP React is the React integration for GRIP, a reactive dataflow system.
+Components declare the values and actions they need while remaining
+supplier-agnostic.
 
-grip-react is a powerful, reactive dataflow library that fundamentally decouples an application's components from its data sources. Instead of managing local, derived, and server state with different tools, grip-react provides a single, unified architecture built around a hierarchical "Context Graph." Components simply ask for data by a typed key, and the graph intelligently resolves and delivers it from the most appropriate provider.
+GRIP's declarative context model provides a typed API and builds connections
+dynamically, keeping consumers connected to the right producers as things
+change. TypeScript knows the values and actions each component consumes.
 
-## **Architecture: Built on grip-core**
+[See the producer switch](#watch-the-connections-change) ·
+[Install](#install-the-published-package) ·
+[Run the examples](#run-the-development-examples) · [React API](#react-api)
 
-grip-react is built on top of [`@owebeeone/grip-core`](https://www.npmjs.com/package/@owebeeone/grip-core), a framework-agnostic core runtime that provides the foundational GRIP (Generalized Retrieval Intent Provisioning) functionality. The core library has been split out to enable framework-agnostic usage and better separation of concerns.
+## Change the producer. Keep the component.
 
-**What's in grip-core:**
-- Core GRIP engine (Grok) and Context Graph
-- All Tap implementations (AtomValueTap, FunctionTap, BaseAsyncTap, AsyncStreamMultiTap, etc.)
-- Grip, Drip, and Context primitives
-- Query system and binding mechanisms
-- Async request state management
+This weather column edits a location and displays a temperature.
+It stays the same when the source of that temperature changes.
 
-**What's in grip-react:**
-- React-specific hooks (`useGrip`, `useTap`, `useChildContext`, etc.)
-- React Provider component (`GripProvider`)
-- React integration layer connecting hooks to the core engine
+A **grip** is a typed key, such as `TEMPERATURE`. `useGrip` reads its current
+value and subscribes to changes. `useSelectGrip` binds a select to a value and
+its mutator, both supplied by the enclosing context.
 
-The documentation below describes the complete GRIP system, including both core concepts (provided by grip-core) and React-specific APIs (provided by grip-react). When using grip-react, you get access to the full GRIP architecture through React-friendly hooks and components.
-
-## **The Core Philosophy: The Unification of State**
-
-Modern React applications often contend with three distinct categories of state: local UI state, derived state computed from other state, and asynchronous server state. This typically leads to a fragmented toolkit: one library for simple global state (like Zustand), another for complex state machines (like Redux), and a third for server state management (like TanStack Query).
-
-grip-react is built on the architectural thesis that this separation is an artificial complexity. It provides a unified model where all data sources, regardless of their nature, are treated as interchangeable providers within a cohesive system. The library offers distinct but interoperable primitives for each state type: AtomValueTap for local state, FunctionTap for derived state, and BaseAsyncTap for asynchronous server state. All of these are resolved through the same core engine (Grok) and Context Graph, allowing developers to swap the underlying implementation of a data source—from a simple mock value to a complex, cached API call—with zero changes to the consuming component.
-
-This design achieves true implementation independence. A React component consumes data using the useGrip hook, which is entirely agnostic about the data's origin. The component only knows
-
-*what* data it needs (identified by a Grip), not *how* or *from where* that data is provided. This abstraction is the library's primary goal: to empower developers to build source-agnostic components that request data via an abstract identifier, allowing the system to handle the complex task of resolution and delivery.
-
-## **The Core Concepts: Grips, Taps, Drips, and Contexts**
-
-In this metaphor, Grip-react maps to a precision drip‑irrigation network
-
-### **Grip: The Labeled Emitter**
-
-A Grip is a typed, immutable label for a specific emitter/line in the irrigation network. It identifies what output a plant (component) wants to receive (e.g., flow or nutrient mix) but does not contain the data itself. Grips are typically defined centrally in a GripRegistry to ensure uniqueness and are composed of a scope, name, and an optional defaultValue.
-
-```ts
-// From grip-react-demo/src/grips.ts [1]  
-import { defineGrip } from './runtime';
-
-export const COUNT = defineGrip<number>('Count', 1);
-```
-
-### **Tap: The Valve/Mixing Station**
-
-A Tap is a producer that opens/closes valves and/or mixes nutrients for one or more Grips. Taps are classes or factory functions that implement the Tap interface and declare which Grips they provide. The library includes different kinds of Taps for different jobs, such as AtomValueTap for simple valves (local state), FunctionTap for mixers/derivers (derived state), and AsyncTap for remote controllers (server state).
-
-### **Drip: The Emitter Output**
-
-A Drip is the live output at the emitter. It represents a subscribable stream that delivers changes to all consumers whenever the upstream Tap adjusts the flow or composition. The useGrip hook interacts with a Drip under the hood, managing subscriptions and re-rendering the component upon updates.
-
-### **Context: The Irrigation Zone/Branch**
-
-A GripContext is like an irrigation zone or branch. It provides scope and configuration. A Tap registered in a specific branch becomes the default provider for all descendants within it, unless a closer branch declares its own Tap. GripContexts form a Directed Acyclic Graph (DAG), and components can create child contexts to establish isolated zones. When a component requests a Grip, the engine searches up this graph from the component's current context to find the closest Tap that provides it.
-
-## **Getting Started: Your First Counter**
-
-This tutorial demonstrates how to build a simple, interactive counter, introducing the foundational APIs of grip-react.
-
-### **Step 1: Setup the Provider**
-
-At the root of the application, the component tree must be wrapped with the GripProvider. This component makes the grok engine and the root context available to all descendant components via React's context API.
-
+<!-- demo-source: src/readme/WeatherColumn.tsx -->
 ```tsx
-// src/main.tsx
-import { GripProvider } from '@owebeeone/grip-react';
-import { grok, main } from './runtime';
-import { createRoot } from 'react-dom/client';
-import App from './App';
+import { useGrip, useSelectGrip } from '@owebeeone/grip-react';
+import { LOCATION, LOCATION_TAP, TEMPERATURE } from './grips';
 
-const root = createRoot(document.getElementById('root')!);
-root.render(
-  <GripProvider grok={grok} context={main}>
-    <App />
-  </GripProvider>
-);
-```
+export default function WeatherColumn() {
+  // GRIP supplies this column's values and mutator from its surrounding scope.
+  const location = useSelectGrip(LOCATION, LOCATION_TAP);
+  const temperature = useGrip(TEMPERATURE);
 
-### **Step 2: Define Your Grips**
-
-Create unique, typed keys for the counter's value and its controller. The value Grip (COUNT) will hold the number, while the handle Grip (COUNT\_TAP) will provide the functions to modify it.
-
-```ts
-// src/grips.ts  
-import type { AtomTapHandle } from '@owebeeone/grip-react';  
-import { defineGrip } from './runtime';
-
-export const COUNT = defineGrip<number>('Count', 1);
-export const COUNT_TAP = defineGrip<AtomTapHandle<number>>('Count.Tap');
-```
-
-### **Step 3: Create a Tap (The Data Source)**
-
-Use the createAtomValueTap factory to create a simple, self-contained state holder. This type of tap, an AtomValueTap, is ideal for local state management. It will *provide* the COUNT value and, because a handleGrip is specified, it will also provide a controller object on the COUNT\_TAP grip.
-
-```ts
-// src/taps.ts
-import { createAtomValueTap, type Tap } from '@owebeeone/grip-react';
-import { COUNT, COUNT_TAP } from './grips';
-
-export const CounterTap: Tap = createAtomValueTap(
-  COUNT,
-  { initial: COUNT.defaultValue ?? 0, handleGrip: COUNT_TAP }
-);
-```
-
-### **Step 4: Register the Tap**
-
-Inform the grok engine that the CounterTap is available to serve data. Registration makes the tap discoverable by the resolution system.
-
-```ts
-// src/taps.ts  
-import { grok } from './runtime';
-
-export function registerAllTaps() {  
-  grok.registerTap(CounterTap);  
-  //... other taps  
+  return (
+    <section>
+      <label>
+        Location
+        <select {...location}>
+          <option>Sydney</option>
+          <option>Paris</option>
+        </select>
+      </label>
+      <output>{temperature == null ? 'Loading' : `${temperature} °C`}</output>
+    </section>
+  );
 }
 ```
 
-### **Step 5: Use the Grips in Your Component**
+This component knows the contracts for location and temperature. It does not
+import a weather producer, accept a column identifier, fetch data, or pass a city
+to a weather service. It still owns presentation: the control, units, and loading
+text belong here.
 
-With the system configured, a React component can now consume the state. The useGrip hook reads the live value of COUNT and retrieves the controller object from COUNT\_TAP. The component is completely decoupled from the CounterTap; it only knows about the Grips.
+### The producers declare what changes
 
+These are the input/output entries from the three
+[tap configurations](#producers-declare-their-own-inputs) in the runnable example.
+The computation and request handling are shown in full below.
+
+**Mock weather** provides temperature and needs the column's location:
+
+<!-- demo-declaration: src/readme/providers.ts#createMockWeatherTap -->
+```ts
+provides: [TEMPERATURE],
+destinationParamGrips: [LOCATION],
+```
+
+**Coordinate weather** provides the same temperature and needs coordinates:
+
+<!-- demo-declaration: src/readme/providers.ts#createCoordinateWeatherTap -->
+```ts
+provides: TEMPERATURE,
+destinationParamGrips: [COORDINATES],
+```
+
+**The geocoder** provides those coordinates and needs the column's location:
+
+<!-- demo-declaration: src/readme/providers.ts#createGeocoderTap -->
+```ts
+provides: [COORDINATES],
+destinationParamGrips: [LOCATION],
+```
+
+The weather producers share an output contract, while their input requirements
+differ. GRIP resolves those requirements from each column's context. The column
+above reads the same grips throughout.
+
+## Watch the connections change
+
+Put this same component in two scopes, each with its own location. Change one
+column's location and the other keeps its own value.
+
+The source selector chooses between the two weather producers. When the selected
+producer needs coordinates, GRIP resolves them through the geocoder using the
+requesting column's location:
+
+```text
+Column's location → Geocoder → Coordinates → Weather producer → Column's temperature
+```
+
+**The component never assembles that sequence or passes parameters to either
+producer.** Each producer declares its own inputs and outputs; GRIP builds and
+maintains the connections. Producers can be componentized like consumers.
+
+[Run the examples](#run-the-development-examples), then try either route:
+
+- **Repeatable local trial:** open `/readme-weather.html`. Change one column's
+  city and check that the other keeps its own city. Switch **Mock** to
+  **Coordinates (fixture)**, then back. Both temperatures update through the
+  selected producer; the cities and controls stay in place. This version uses
+  local fixtures and makes no external requests.
+- **Live graph:** open the main demo's **Weather** tab and choose **Show Graph**.
+  Change a location and switch **Mock** / **Meteo**. Follow the green data
+  connections from the selected weather producer; Meteo requires coordinates
+  from the geocoder. **View Code** shows the actual UI and producer source.
+
+In both versions, the display imports neither weather implementation nor the
+geocoder. The [composition tests](#verify-the-composition) check that changing
+producers keeps the existing column controls mounted.
+
+> The weather example uses the development tree's unreleased `GripScope` API.
+> [Published installation](#install-the-published-package) and
+> [development setup](#run-the-development-examples) are documented separately.
+
+## Verify the composition
+
+Requesting temperature is enough to activate the geocoder dependency. This test
+registers the producers and observes the output; it never calls the geocoder
+itself. The lookup is unused until temperature is requested:
+
+<!-- demo-test: tests/readmeWeather.test.tsx#transitive -->
 ```tsx
-// src/App.tsx
-import { useGrip } from '@owebeeone/grip-react';
-import { COUNT, COUNT_TAP } from './grips';
+it('resolves the geocoder as a transitive input of the weather producer', async () => {
+  const grok = new Grok(registry);
+  grok.registerTap(createAtomValueTap(LOCATION, { initial: 'Paris' }));
+  const lookup = vi.fn(() => ({ latitude: 48.86, longitude: 2.35 }));
+  grok.registerTap(createGeocoderTap(lookup));
+  const weather = createCoordinateWeatherTap();
+  grok.registerTap(weather);
+  expect(lookup).not.toHaveBeenCalled();
+  const result = grok.query(TEMPERATURE, grok.mainContext);
+  const unsubscribe = result.subscribe(() => {});
+  try {
+    grok.flush();
+    await waitFor(() => expect(result.get()).toBe(14));
+    expect(lookup).toHaveBeenCalledWith('Paris');
+  } finally {
+    unsubscribe();
+    grok.unregisterTap(weather);
+  }
+});
+```
 
-export default function App() {
+The next check edits one column independently, switches weather producers in
+both directions, and verifies that the original column control is still mounted.
+
+<details>
+<summary>See the producer-switching and independent-column test</summary>
+
+<!-- demo-test: tests/readmeWeather.test.tsx#composition -->
+```tsx
+it('keeps both columns and their selected cities through provider changes', async () => {
+  const grok = createWeatherRuntime();
+  const view = render(<App grok={grok} />);
+  const left = within(view.getByRole('region', { name: 'Column 1' }));
+  const right = within(view.getByRole('region', { name: 'Column 2' }));
+  await waitFor(() => expect(left.getByRole('status').textContent).toBe('20 °C'));
+  expect(right.getByRole('status').textContent).toBe('12 °C');
+  const column = left.getByRole('combobox');
+  act(() => { fireEvent.change(column, { target: { value: 'Paris' } }); grok.flush(); });
+  expect(left.getByRole('status').textContent).toBe('12 °C');
+  act(() => { fireEvent.change(view.getByRole('combobox', { name: 'Weather provider' }), { target: { value: 'coordinates' } }); grok.flush(); });
+  await waitFor(() => expect(left.getByRole('status').textContent).toBe('14 °C'));
+  expect(right.getByRole('status').textContent).toBe('14 °C');
+  expect(left.getByRole('combobox')).toBe(column);
+  act(() => { fireEvent.change(column, { target: { value: 'Sydney' } }); grok.flush(); });
+  await waitFor(() => expect(left.getByRole('status').textContent).toBe('22 °C'));
+  expect(right.getByRole('status').textContent).toBe('14 °C');
+  act(() => { fireEvent.change(view.getByRole('combobox', { name: 'Weather provider' }), { target: { value: 'mock' } }); grok.flush(); });
+  await waitFor(() => expect(left.getByRole('status').textContent).toBe('20 °C'));
+  expect(right.getByRole('status').textContent).toBe('12 °C');
+});
+```
+
+</details>
+
+Both checks are in the
+[executable introduction tests](https://github.com/owebeeone/grip-react-demo/blob/main/tests/readmeWeather.test.tsx).
+Each piece can also be tested in isolation: supply the
+[display's values](#test-the-component-with-supplied-values), or test a
+[producer without React](#test-the-producer-without-react).
+
+## Start small. Keep the same model as you grow.
+
+A small application still benefits from testable, supplier-agnostic components.
+GRIP provides typed contracts, independent producers, and connection management
+from the first feature. As requirements grow, add scopes, derived values, or
+asynchronous sources using the same model. The building blocks are already
+available; you don't have to invent new plumbing for each stage.
+
+## Install the published package
+
+In an existing React application, install the released library normally:
+
+```sh
+npm install @owebeeone/grip-react
+```
+
+Or, with pnpm:
+
+```sh
+pnpm add @owebeeone/grip-react
+```
+
+React and React DOM are peer dependencies (React 18 or later); core is installed
+as a package dependency. Consumers of a released version do not need sibling
+source repositories.
+
+The `GripScope` introduction in this README targets the development tree. Its
+release version has not yet been assigned; use the setup below to run this new
+example rather than assuming the published package already contains that API.
+
+## Quick start: one value, one component
+
+Here is a complete React entry point for a page containing `<div id="root"></div>`:
+
+<!-- demo-source: src/readme/counter.tsx -->
+```tsx
+import { createRoot } from 'react-dom/client';
+import {
+  GripOf, GripRegistry, Grok, GripProvider, useGrip,
+  createAtomValueTap, type AtomTapHandle,
+} from '@owebeeone/grip-react';
+
+const registry = new GripRegistry();
+const defineGrip = GripOf(registry);
+const COUNT = defineGrip<number>('Count');
+const COUNT_TAP = defineGrip<AtomTapHandle<number>>('Count.Handle');
+
+const grok = new Grok(registry);
+grok.registerTap(createAtomValueTap(COUNT, { initial: 0, handleGrip: COUNT_TAP }));
+
+export function Counter() {
   const count = useGrip(COUNT);
-  const countTap = useGrip(COUNT_TAP);
+  const counter = useGrip(COUNT_TAP);
+  return <button onClick={() => counter?.update(n => n + 1)}>Count: {count}</button>;
+}
 
+createRoot(document.getElementById('root')!).render(
+  <GripProvider grok={grok}><Counter /></GripProvider>,
+);
+```
+
+The component reads its value and mutator through `useGrip`. The atom stores the
+value, and GRIP delivers updates; no component-local state or effects are needed.
+Run it at `/readme-counter.html` using the development setup below, or use the
+entry point in an existing React application. The demo's
+[HTML entry](https://github.com/owebeeone/grip-react-demo/blob/main/readme-counter.html)
+shows the root element and script tag.
+
+## Two instances, independent values and controls
+
+`GripScope` gives a subtree its own context. The application initializes each
+column's location; the column reads and changes it through the same grips.
+A **Tap** is a data producer: the `createAtomValueTap` calls below create location
+state and expose its mutator. `registerTap` makes that producer available in the
+scope's home context.
+
+<!-- demo-source: src/readme/WeatherColumns.tsx -->
+```tsx
+import { GripScope, createAtomValueTap } from '@owebeeone/grip-react';
+import { LOCATION, LOCATION_TAP } from './grips';
+import WeatherColumn from './WeatherColumn';
+
+export default function WeatherColumns() {
   return (
-    <div>
-      <button onClick={() => countTap?.update(c => (c ?? 0) - 1)}>-</button>
-      <span>Count: {count}</span>
-      <button onClick={() => countTap?.update(c => (c ?? 0) + 1)}>+</button>
+    <div className="weather-columns">
+      <section aria-label="Column 1">
+        <GripScope scopeKey="weather-column:1" init={ctx =>
+          ctx.getGripHomeContext().registerTap(createAtomValueTap(LOCATION, {
+            initial: 'Sydney', handleGrip: LOCATION_TAP,
+          }))
+        }>
+          <WeatherColumn />
+        </GripScope>
+      </section>
+      <section aria-label="Column 2">
+        <GripScope scopeKey="weather-column:2" init={ctx =>
+          ctx.getGripHomeContext().registerTap(createAtomValueTap(LOCATION, {
+            initial: 'Paris', handleGrip: LOCATION_TAP,
+          }))
+        }>
+          <WeatherColumn />
+        </GripScope>
+      </section>
     </div>
   );
 }
 ```
 
-This simple example showcases the core workflow: defining abstract data keys (Grips), providing them with a concrete implementation (Tap), and consuming them in a component that remains blissfully unaware of the underlying logic.
+Both columns render `WeatherColumn` unchanged. Selecting Paris in the first
+column changes its location atom; it does not change the other column.
 
-## **Understanding the Power of the Context Graph**
+The keys identify **UI instances**, not cities. A column keeps its scope when
+Sydney changes to Paris. The initializer runs when that live keyed context is
+created, before its children read it; a rerender or a new inline callback does
+not reset its values. Later changes go through the mutator.
 
-The Context Graph is grip-react's most powerful and defining feature. It is more than just a state container; it functions as a runtime Dependency Injection (DI) system for reactive data streams. In a typical DI system, a consumer requests a service by its type or token within a specific scope, and a container provides the appropriate implementation. grip-react mirrors this pattern: a component requests a Grip (the token) within its GripContext (the scope), and the grok engine (the container) traverses the context hierarchy to find the closest registered Tap (the service provider). The
+Here are the complete contract definitions, including `LOCATION_TAP`, the typed
+key for the location's controller:
 
-`GripScope` provides a keyed context to a React subtree. Descendants use ordinary
-GRIP hooks without passing context objects between components. The lower-level
-context hooks remain available when an application needs to manage contexts itself.
+<!-- demo-source: src/readme/grips.ts -->
+```ts
+import { GripOf, GripRegistry, type AtomTapHandle } from '@owebeeone/grip-react';
 
-### **Example: Building Independent Weather Panels**
+export const registry = new GripRegistry();
+const defineGrip = GripOf(registry);
 
-A practical application of the Context Graph is creating multiple, independent instances of a component. Consider a dashboard displaying weather for several cities side-by-side. Each panel must manage its own location and data without interfering with the others.
+export type City = 'Sydney' | 'Paris';
+export type Coordinates = { latitude: number; longitude: number };
+export type WeatherSource = 'mock' | 'coordinates';
 
-The demo's `WeatherPanel` gives each column a scope and initializes its location
-atom. The key identifies the column, not its city. Changing the city updates that
-atom while preserving the scope.
+export const LOCATION = defineGrip<City>('Readme.Location');
+export const LOCATION_TAP = defineGrip<AtomTapHandle<City>>('Readme.Location.Handle');
+export const TEMPERATURE = defineGrip<number>('Readme.Temperature');
+export const COORDINATES = defineGrip<Coordinates>('Readme.Coordinates');
+export const SOURCE = defineGrip<WeatherSource>('Readme.Source', 'mock');
+export const SOURCE_TAP = defineGrip<AtomTapHandle<WeatherSource>>('Readme.Source.Handle');
+```
 
+## Producers declare their own inputs
+
+The first weather producer needs a city name. Its replacement needs coordinates.
+A separate geocoder provides coordinates from a city name.
+
+The important declarations are `provides` and `destinationParamGrips`. A
+**destination parameter** is read from the context consuming that producer's
+output. It is not a parameter the UI has to assemble and pass to the producer.
+
+| Producer | Provides | Requires from the consuming context |
+| --- | --- | --- |
+| Mock weather | `TEMPERATURE` | `LOCATION` |
+| Coordinate weather | `TEMPERATURE` | `COORDINATES` |
+| Geocoder | `COORDINATES` | `LOCATION` |
+
+The dependency chain introduced above follows from these declarations.
+Neither the column nor the weather producer imports or calls the geocoder.
+
+Here are the complete producers used by the runnable introduction. Their data is
+**a deterministic fixture, not a live forecast**. This keeps the dependency
+mechanism visible without HTTP response parsing or a network requirement.
+
+`createFunctionTap` uses the type slots `<Outputs, HomeParams, DestinationParams>`
+here. `Record<string, never>` means there are no home parameters. These records
+are explicit because the current API does not infer them from the grip arrays.
+
+<!-- demo-source: src/readme/providers.ts -->
+```ts
+import { createAsyncValueTap, createFunctionTap } from '@owebeeone/grip-react';
+import { COORDINATES, LOCATION, TEMPERATURE, type City, type Coordinates } from './grips';
+
+// Small, deterministic fixtures keep the introduction independent of a service.
+const coordinates: Record<City, Coordinates> = {
+  Sydney: { latitude: -33.87, longitude: 151.21 },
+  Paris: { latitude: 48.86, longitude: 2.35 },
+};
+
+export function createMockWeatherTap() {
+  // Type slots: outputs, home parameters (none), destination parameters.
+  return createFunctionTap<
+    { temperature: typeof TEMPERATURE }, Record<string, never>, { location: typeof LOCATION }
+  >({
+    provides: [TEMPERATURE],
+    destinationParamGrips: [LOCATION],
+    compute: ({ getDestParam }) => {
+      const city = getDestParam(LOCATION);
+      return new Map([[TEMPERATURE, city === 'Sydney' ? 20 : 12]]);
+    },
+  });
+}
+
+export function createGeocoderTap(lookup = (city: City) => coordinates[city]) {
+  return createFunctionTap<
+    { coordinates: typeof COORDINATES }, Record<string, never>, { location: typeof LOCATION }
+  >({
+    provides: [COORDINATES],
+    destinationParamGrips: [LOCATION],
+    compute: ({ getDestParam }) => {
+      const city = getDestParam(LOCATION);
+      return city ? new Map([[COORDINATES, lookup(city)]]) : new Map();
+    },
+  });
+}
+
+export function createCoordinateWeatherTap(
+  fetchTemperature: (point: Coordinates, signal: AbortSignal) => Promise<number> =
+    async point => point.latitude < 0 ? 22 : 14,
+) {
+  return createAsyncValueTap({
+    provides: TEMPERATURE,
+    destinationParamGrips: [COORDINATES],
+    requestKeyOf: params => {
+      const point = params.get(COORDINATES);
+      return point ? `${point.latitude}:${point.longitude}` : undefined;
+    },
+    fetcher: (params, signal) => {
+      const point = params.get(COORDINATES);
+      if (!point) throw new Error('Weather requires coordinates');
+      return fetchTemperature(point, signal);
+    },
+  });
+}
+```
+
+The async producer receives an abort signal and supplies a request key derived
+from coordinates. Request handling belongs in the tap; React still reads
+`TEMPERATURE` in the same way. In an application, give `fetchTemperature` your
+service implementation and handle loading and errors through suitable contracts.
+
+The [full Weather demo](https://github.com/owebeeone/grip-react-demo) uses
+[Open-Meteo producers](https://github.com/owebeeone/grip-react-demo/blob/main/src/openmeteo_taps.ts)
+with separate latitude and longitude outputs. The small introduction uses one
+coordinates value to keep the same composition principle easy to read.
+
+### Switch the producer, keep the columns
+
+The application defines selection rules once. These bindings select the weather
+tap from the `SOURCE` value; the geocoder is registered separately and supplies
+coordinates when they are requested.
+
+<!-- demo-source: src/readme/runtime.ts -->
+```ts
+import { Grok, createAtomValueTap, withOneOf } from '@owebeeone/grip-react';
+import { registry, SOURCE, SOURCE_TAP } from './grips';
+import { createCoordinateWeatherTap, createGeocoderTap, createMockWeatherTap } from './providers';
+
+export function createWeatherRuntime() {
+  const grok = new Grok(registry);
+  grok.registerTap(createAtomValueTap(SOURCE, { initial: 'mock', handleGrip: SOURCE_TAP }));
+  grok.registerTap(createGeocoderTap());
+  grok.addBinding({
+    id: 'mock-weather',
+    query: withOneOf(SOURCE, 'mock', 10).build(),
+    tap: createMockWeatherTap(),
+    baseScore: 5,
+  });
+  grok.addBinding({
+    id: 'coordinate-weather',
+    query: withOneOf(SOURCE, 'coordinates', 10).build(),
+    tap: createCoordinateWeatherTap(),
+    baseScore: 5,
+  });
+  return grok;
+}
+```
+
+The application shell brings the runtime, source selector, and columns together.
+The selector is inside `GripProvider`, so its hook reads the supplied runtime:
+
+<!-- demo-source: src/readme/App.tsx -->
 ```tsx
-// Within the application's GripProvider; weather providers are registered separately.
-import { GripScope, createAtomValueTap, useGrip, useSelectGrip } from '@owebeeone/grip-react';
-import { WEATHER_LOCATION, WEATHER_LOCATION_TAP, WEATHER_TEMP_C } from './grips.weather';
+import { GripProvider, useSelectGrip, type Grok } from '@owebeeone/grip-react';
+import { SOURCE, SOURCE_TAP } from './grips';
+import WeatherColumns from './WeatherColumns';
 
-function WeatherColumn() {
-  const temperature = useGrip(WEATHER_TEMP_C);
-  const location = useSelectGrip(WEATHER_LOCATION, WEATHER_LOCATION_TAP);
+function SourcePicker() {
+  const source = useSelectGrip(SOURCE, SOURCE_TAP);
   return (
-    <section>
-      <select {...location} aria-label="Location">
-        <option>Sydney</option>
-        <option>Paris</option>
+    <label>
+      Weather provider
+      <select {...source}>
+        <option value="mock">Mock</option>
+        <option value="coordinates">Coordinates (fixture)</option>
       </select>
-      <output>{temperature ?? 'Loading'} °C</output>
-    </section>
+    </label>
   );
 }
 
-function WeatherColumns() {
+export default function App({ grok }: { grok: Grok }) {
   return (
-    <>
-      <GripScope scopeKey="weather-column:1" init={ctx =>
-        ctx.getGripHomeContext().registerTap(createAtomValueTap(WEATHER_LOCATION, {
-          initial: 'Sydney', handleGrip: WEATHER_LOCATION_TAP,
-        }))
-      }>
-        <WeatherColumn />
-      </GripScope>
-      <GripScope scopeKey="weather-column:2" init={ctx =>
-        ctx.getGripHomeContext().registerTap(createAtomValueTap(WEATHER_LOCATION, {
-          initial: 'Paris', handleGrip: WEATHER_LOCATION_TAP,
-        }))
-      }>
-        <WeatherColumn />
-      </GripScope>
-    </>
+    <GripProvider grok={grok}>
+      <h1>One weather column, two contexts</h1>
+      <SourcePicker />
+      <WeatherColumns />
+    </GripProvider>
   );
 }
 ```
 
-Each column reads and changes its own location without knowing a column ID or
-assembling weather request parameters. Its provider resolves those parameters
-from the consuming column's context.
+Finally, create the runtime once and mount the app:
 
-`init` runs synchronously when a new keyed context is created, before children
-read it. Rerenders, location changes, and new inline callbacks reuse the existing
-live context without running `init` again. Keys are local to the enclosing context;
-using the same key there deliberately shares a scope. Unmounting does not retire
-an externally owned context. See the [scope lifecycle notes](dev-docs/GripScope.md)
-and the [runnable demo](https://github.com/owebeeone/grip-react-demo).
-
-## **Mastering Data Flow with Taps**
-
-Taps are the workhorses of grip-react, providing the logic for all data sources. The library offers specialized taps for different use cases.
-
-### **Asynchronous Taps: Fetching Remote Data**
-
-AsyncTaps are designed for fetching data from external APIs. They provide a comprehensive feature set out-of-the-box, including LRU-TTL caching, request deduplication and coalescing, automatic cancellation via AbortController, and deadline-based timeouts. The
-
-createAsyncMultiTap factory allows for a declarative setup, requiring a requestKeyOf function for caching, a fetcher function to perform the request, and a mapResult function to transform the API response into Grip updates.
-
-```ts
-// grip-react-demo/src/openmeteo_taps.ts [1]
-import { createAsyncMultiTap, type Tap } from '@owebeeone/grip-react';
-import { GEO_LAT, GEO_LNG, GEO_LABEL, WEATHER_LOCATION } from './grips.weather';
-
-export function createLocationToGeoTap(): Tap {
-  //...
-  return createAsyncMultiTap({
-    provides: /* ... */ undefined as any,
-    destinationParamGrips: /* ... */ undefined as any,
-    cacheTtlMs: 30 * 60 * 1000, // Cache for 30 minutes
-    requestKeyOf: (params) => params.get(WEATHER_LOCATION)?.trim().toLowerCase(),
-    fetcher: async (params, signal) => {
-      const location = params.get(WEATHER_LOCATION);
-      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}`;
-      const res = await fetch(url, { signal });
-      //... fetch and return data
-      return await res.json();
-    },
-    mapResult: (_params, r) => new Map([/* ... map result to grips ... */]),
-  });
-}
-```
-
-### **Destination Parameters: Inverting Control**
-
-A unique and powerful feature of grip-react is the concept of "destination parameters." This mechanism inverts the typical flow of control for data fetching. In a conventional model, a component *pushes* parameters to the data-fetching hook (e.g., useQuery({ queryKey: \['user', userId\] })). In grip-react, a Tap can declare a dependency on destinationParamGrips. The Tap then *pulls* these parameter values from the context of the component that is consuming its output.
-
-This inversion of control makes Taps highly reusable, "headless" services. A single, globally registered Tap can be configured implicitly by its consumers through their local contexts. The createLocationToGeoTap is a prime example: it provides geocoding data (GEO\_LAT, GEO\_LNG) but depends on the WEATHER\_LOCATION destination parameter. Each WeatherColumn provides a different WEATHER\_LOCATION in its local context, causing the single geocoding Tap to perform different API calls tailored to each consumer.
-
-### **Derived State with FunctionTap**
-
-FunctionTap is the grip-react equivalent of selectors (like in Redux) or derived atoms. It subscribes to one or more input Grips and computes an output Grip. Whenever an input Grip changes, the compute function re-runs automatically, updating the output. This is ideal for transformations, calculations, and filtering logic that needs to remain reactive. The
-
-anchorscad-viewer demo utilizes this pattern to derive navigation lists from a raw JSON data source.
-
-
-```ts
-// anchorscad-viewer/src/taps.ts [1]
-import { createFunctionTap, type Tap } from '@owebeeone/grip-react';
-import { ALL_MODULES_LIST, RAW_STATUS_JSON } from './grips';
-
-export function createGlobalNavigationDataProviderTap(): Tap {
-  return createFunctionTap({
-    provides: /* ... */ undefined as any,
-    homeParamGrips: /* ... */ undefined as any,
-    compute: ({ getHomeParam }) => {
-      const status = getHomeParam(RAW_STATUS_JSON);
-      const updates = new Map();
-      if (status) {
-        const modules = (status.module_status || []).filter((m: any) => m.shape_results?.length > 0);
-        updates.set(ALL_MODULES_LIST, modules);
-      }
-      return updates;
-    },
-  });
-}
-```
-
-#### Homogeneous compute() result and state application
-
-- The `compute()` function returns a homogeneous `Map` that can include both output grips and state grips.
-- Keys that match declared state grips are applied to internal state (not published); others are published as outputs.
-- State keys are identified by `stateGrips` in the config; if omitted, they are inferred from `initialState`.
-
-```ts
-// Example: simplest stateful FunctionTap
-import { createFunctionTap } from '@owebeeone/grip-react';
-
-const VALUE = defineGrip<number>('Fn.Value', 0);
-const A = defineGrip<number>('Fn.A', 0);
-const B = defineGrip<number>('Fn.B', 0);
-const HANDLE = defineGrip<FunctionTapHandle<{ b: typeof B }>>('Fn.Handle');
-
-export function makeFnTap() {
-  return createFunctionTap({
-    provides: [VALUE],
-    homeParamGrips: [A],
-    handleGrip: HANDLE,
-    // If stateGrips is omitted, keys from initialState are treated as state.
-    initialState: [[B, 0]],
-    compute: ({ getHomeParam, getState }) => {
-      const a = getHomeParam(A) ?? 0;
-      const b = getState(B) ?? 0;
-      const out = new Map();
-      // Publish value as sum of A and B
-      out.set(VALUE, a + b);
-      // Tiny state demo: when A > 10, bump B by 1
-      if (a > 10) out.set(B, b + 1);
-      return out;
-    },
-  });
-}
-```
-
-## **Dynamic Systems with Declarative Queries**
-
-Instead of embedding conditional logic within components to switch between data sources, grip-react provides a declarative query system. This system allows developers to define rules that bind specific Taps to certain application states. The grok engine evaluates these rules and automatically activates the correct Tap when the state changes.
-
-This approach elevates configuration to a "policy" level. The rules governing which data source to use are defined centrally, completely separate from the application's presentation logic. This is an extremely powerful pattern for implementing feature flags, A/B testing, or managing different environments (e.g., Storybook, testing, production) without cluttering components with conditional data-fetching logic. A component simply requests data with useGrip, and the query system ensures the correct provider is active behind the scenes.
-
-### **Example: Switching Between Mock and Live Weather Data**
-
-The demo application uses this system to seamlessly switch between a mock weather Tap and a live API-driven Tap. The switch is controlled by the value of the WEATHER\_PROVIDER\_NAME Grip.
-
-
-```ts
-// grip-react-demo/src/taps.ts [1]
-import { withOneOf } from '@owebeeone/grip-react';
-import { WEATHER_PROVIDER_NAME } from './grips';
-
-export function registerAllTaps() {
-  // When WEATHER_PROVIDER_NAME is 'mock', activate the mock WeatherTap.
-  const mockQuery = withOneOf(WEATHER_PROVIDER_NAME, 'mock', 10).build();
-  grok.addBinding({
-    id: 'mock-weather-binding',
-    query: mockQuery,
-    tap: WeatherTap, // The mock implementation
-    baseScore: 5,
-  });
-
-  // When WEATHER_PROVIDER_NAME is 'meteo', activate the live OpenMeteo tap factory.
-  const meteoQuery = withOneOf(WEATHER_PROVIDER_NAME, 'meteo', 10).build();
-  grok.addBinding({
-    id: 'meteo-weather-binding',
-    query: meteoQuery,
-    tap: METEO_TAP_FACTORY, // The live implementation
-    baseScore: 5,
-  });
-}
-```
-
-By simply changing the value of the WEATHER\_PROVIDER\_NAME Grip—which is controlled by buttons in the UI—the entire data source for the weather panels is swapped transparently, without any of the consuming components being aware of the change.
-
-## **How grip-react Compares**
-
-grip-react unifies concepts that are often handled by separate, specialized libraries. The following comparison clarifies its architectural trade-offs and unique position in the React ecosystem.
-
-### **Feature Comparison Table**
-
-| Feature | grip-react | Zustand | Redux Toolkit | TanStack Query |
-| :---- | :---- | :---- | :---- | :---- |
-| **Primary Use Case** | Unified Data Flow (Local, Derived, Server) | Simple Global State | Predictable, Structured Global State | Server State (Fetching, Caching) |
-| **State Model** | Decentralized Graph (Taps) | Centralized Store (Slice) | Centralized Store (Slices/Reducers) | Centralized Cache (Query Keys) |
-| **Async State** | Built-in (AsyncTap) | Middleware or manual useEffect | Thunks / RTK Query | Core feature (useQuery, useMutation) |
-| **Context-Awareness** | Core feature (Context Graph, Dest Params) | Not built-in | Not built-in | Via queryKey parameters |
-| **Boilerplate** | Moderate (Grips, Taps) | Very Low | High (Slices, Actions, Reducers) | Low |
-| **Key Differentiator** | Unified graph model for all state types | Simplicity and minimalism | DevTools and predictable state changes | Advanced server state management features |
-
-### **Side-by-Side: Simple State (vs. Zustand)**
-
-Zustand excels at providing simple, low-boilerplate global state.2
-
-**Zustand Example**
-
-```js
-// store.js
-import { create } from 'zustand';
-
-const useCountStore = create((set) => ({
-  count: 0,
-  increment: () => set((state) => ({ count: state.count + 1 })),
-}));
-
-// Component.js
-import { useCountStore } from './store';
-
-function Counter() {
-  const { count, increment } = useCountStore();
-  return <button onClick={increment}>{count}</button>;
-}
-```
-
-**grip-react Example**
-
-```js
-// grips.js
-export const COUNT = defineGrip('Count', 0);
-export const COUNT_TAP = defineGrip('Count.Tap');
-
-// taps.js
-export const CounterTap = createAtomValueTap(COUNT, { handleGrip: COUNT_TAP });
-
-// Component.js
-function Counter() {
-  const count = useGrip(COUNT);
-  const countTap = useGrip(COUNT_TAP);
-  return <button onClick={() => countTap.update(c => c + 1)}>{count}</button>;
-}
-```
-
-**Analysis:** For a single global value, Zustand is undeniably more concise. However, grip-react's architecture is designed for contextual scalability. To create multiple, independent counters with Zustand, one would need to use its non-hook createStore API and manually wire it through React Context or props, re-introducing boilerplate. grip-react handles this scenario natively with its Context Graph (useChildContext). grip-react trades a small amount of initial setup for superior contextual control and modularity as application complexity grows.
-
-### **Side-by-Side: Structured State (vs. Redux Toolkit)**
-
-Redux Toolkit provides a strict, predictable pattern for managing complex, centralized state.7
-
-**Redux Toolkit Example**
-
-JavaScript
-
-// features/counter/counterSlice.js  
-import { createSlice } from '@reduxjs/toolkit';
-
-export const counterSlice = createSlice({  
-  name: 'counter',  
-  initialState: { value: 0 },  
-  reducers: { increment: (state) => { state.value += 1; } },  
-});  
-export const { increment } = counterSlice.actions;  
-export default counterSlice.reducer;
-
-// app/store.js  
-import { configureStore } from '@reduxjs/toolkit';  
-import counterReducer from '../features/counter/counterSlice';
-
-export const store = configureStore({ reducer: { counter: counterReducer } });
-
-// components/Counter.js  
-import { useSelector, useDispatch } from 'react-redux';  
-import { increment } from '../features/counter/counterSlice';
-
-function Counter() {  
-  const count = useSelector((state) => state.counter.value);  
-  const dispatch = useDispatch();  
-  return <button onClick={() => dispatch(increment())}>{count}</button>;  
-}
-
-**grip-react Example:** The counter example remains the same. For more complex, structured state, one would compose multiple AtomTaps or use a MultiAtomValueTap or FunctionTap.
-
-**Analysis:** Redux offers a robust, monolithic state tree with excellent debugging capabilities like time-travel. grip-react achieves predictability through its deterministic graph resolution. The primary architectural difference is that Redux enforces a single, centralized store, whereas grip-react promotes a decentralized graph of many small, independent state producers (Taps). This allows grip-react to offer similar predictability to Redux but without the high boilerplate and the architectural constraints of a single global store, leading to more modular and context-aware state management.
-
-### **Side-by-Side: Server State (vs. TanStack Query)**
-
-TanStack Query is the de facto standard for server state management in React, offering a rich set of features for data fetching, caching, and synchronization.3
-
-**TanStack Query Example**
-
-```js
-// components/User.js
-import { useQuery } from '@tanstack/react-query';
-
-function User({ userId }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['user', userId],
-    queryFn: () => fetch(`/api/users/${userId}`).then(res => res.json()),
-  });
-
-  if (isLoading) return 'Loading...';
-  if (error) return `Error: ${error.message}`;
-  return <div>{data.name}</div>;
-}
-```
-
-**grip-react Example**
-
-```ts
-// grips.js
-type Grip<T> = any; // for doc purposes only
-const USER_ID: Grip<string> = defineGrip('user_id');
-const USER_DATA: Grip<{ name: string }> = defineGrip('user_data');
-
-// taps.js
-const UserDataTap = createAsyncValueTap({
-  provides: USER_DATA,
-  destinationParamGrips: /* ... */ undefined as any,
-  requestKeyOf: (params) => `user:${params.get(USER_ID)}`,
-  fetcher: (params) => fetch(`/api/users/${params.get(USER_ID)}`).then(res => res.json()),
-});
-
-// components/User.tsx
-function User({ userId }: { userId: string }) {
-  const ctx = useChildContext();
-  // Provide the userId in the local context
-  useAtomValueTap(USER_ID, { ctx, initial: userId });
-  // Request the user data from that context
-  const data = useGrip(USER_DATA, ctx);
-  // ... handle loading/error states (can be provided by the tap)
-  return <div>{data?.name}</div>;
-}
-```
-
-**Analysis:** Both libraries offer sophisticated caching, deduplication, and status tracking. The fundamental difference lies in how they are parameterized. TanStack Query embeds parameters directly into the queryKey, tightly coupling the data request to its dependencies. grip-react, through its destination parameters feature, decouples the parameter (USER\_ID) from the data request (USER\_DATA) by placing the parameter in the context graph. This makes grip-react's Taps more abstract, reusable, and composable. Furthermore, it unifies server state with all other state types in the application; a component can ask for USER\_DATA without needing to know it is asynchronous, whereas with TanStack Query, the async nature is explicit in the useQuery hook.
-
-## **API Reference & Installation**
-
-### **Installation**
-
-Install the latest stable release:
-
-```bash
-npm install @owebeeone/grip-react
-# or
-yarn add @owebeeone/grip-react
-```
-
-**Note:** `@owebeeone/grip-core` will be automatically installed as a dependency. The core GRIP functionality is provided by grip-core, while grip-react adds the React-specific integration layer.
-
-### **Core Hooks**
-
-* useGrip(grip, \[context\]): Reads a reactive value from the specified Grip. Subscribes the component to updates. Accepts `GripContextLike` (including `MatchingContext`); reads from the consumer/presentation side when a container is passed.
-* useTap(factory, \[options\]): Registers a Tap instance for the component's lifecycle. Registers at `ctx.getGripHomeContext()`. The Tap is created using the factory function and is automatically unregistered on unmount.
-* useChildContext(\[parentContext\]): Creates a new, isolated child GripContext that inherits from the parent.
-* useKeyedChildContext(key, \[options\]): Returns a cached child context for a stable key. `options.init` runs once on first creation — use a stable named function, not an inline closure that changes every render.
-* useKeyedMatchingContext(key, \[options\]): Returns a cached `MatchingContext` (`home` → `presentation` hierarchy) for matcher-based provider selection per pane/column. Same init stability rules as `useKeyedChildContext`.
-* useAtomValueTap(grip, \[options\]): Creates/registers an atom tap; `options.ctx` accepts `GripContextLike` (registers on home context of a matching container).
-* useGripSetter(handleGrip, \[context\]): A convenience hook that retrieves a Tap handle and returns a stable setter function for updating its state.
-* useGripState(valueGrip, handleGrip, \[context\]): Provides a useState-like API \[value, setValue\] for a Grip controlled by an AtomTap.
-
-#### Keyed contexts: child vs matching
-
-| Hook | Use when |
-|------|----------|
-| `useKeyedChildContext` | Pane needs isolated params/outputs; one provider path (weather column). |
-| `useKeyedMatchingContext` | Pane selects among competing taps via matcher bindings (mock vs live feed per column). |
-
-Example (coin stream demo):
-
+<!-- demo-source: src/readme/main.tsx -->
 ```tsx
-function initCoinMatcher(ctx: MatchingContext) {
-  ctx.addBinding({ id: "mock", query: withOneOf(SOURCE, "mock", 10).build(), tap: mockTapFactory, baseScore: 5 });
-  ctx.addBinding({ id: "live", query: withOneOf(SOURCE, "live", 10).build(), tap: liveTapFactory, baseScore: 5 });
-}
+import { createRoot } from 'react-dom/client';
+import App from './App';
+import { createWeatherRuntime } from './runtime';
+import './weather.css';
 
-function CoinColumn({ columnId }: { columnId: string }) {
-  const ctx = useKeyedMatchingContext(`coin:${columnId}`, { init: initCoinMatcher });
-  const sourceTap = useAtomValueTap(SOURCE, { ctx, initial: "mock", tapGrip: SOURCE_TAP });
-  const price = useGrip(PRICE, ctx);
-  // ...
-}
+const grok = createWeatherRuntime();
+createRoot(document.getElementById('root')!).render(<App grok={grok} />);
 ```
 
-See `grip-react-demo` (`CoinColumn.tsx`, `cointaps.ts`) and `grip-core/GRIP_STREAM_TAPS.md`.
+Changing the source selector selects the other producer. Existing location
+values, controls, and column implementations stay intact.
 
-### **Core Factories**
+The pieces have distinct responsibilities:
 
-* GripRegistry and GripOf(registry): Define and register new Grip instances.
-* createAtomValueTap(valueGrip, \[options\]): Creates a Tap for managing simple, atom-style local state.
-* createFunctionTap(config): Creates a Tap for deriving state from one or more input Grips.
-* createAsyncValueTap(config) / createAsyncMultiTap(config): One-shot async fetch/response taps with caching and cancellation.
-* createAsyncStreamMultiTap(config): Long-lived stream taps (websockets, tick feeds). See `grip-core/GRIP_STREAM_TAPS.md`.
+- The column renders values and invokes its supplied mutator.
+- Each producer declares the inputs it needs and computes or retrieves outputs.
+- Composition supplies initial values and provider-selection rules.
+- GRIP resolves those declarations, maintains subscriptions, and delivers updates.
 
-#### createFunctionTap config (summary)
+## Test the producer without React
 
-- **provides**: array of output grips provided by this tap.
-- **destinationParamGrips?**: grips to read from each consumer's context.
-- **homeParamGrips?**: grips to read from the tap's home context.
-- **handleGrip?**: grip exposing the tap handle (e.g., for local state APIs).
-- **initialState?**: initial state as array or map of `[grip, value]` pairs.
-- **stateGrips?**: explicit list of grips treated as state; if omitted, keys from `initialState` are used.
-- **compute(args)**: returns a Map whose keys are either output grips (published) or state grips (applied to internal state, not published). The `args` include `getHomeParam`, `getDestParam`, `getState`, and optional `dest`.
+The producer can be tested without mounting React. Supply coordinates, inject a
+controlled service, and query its output:
+
+<!-- demo-test: tests/readmeWeather.test.tsx#producer -->
+```tsx
+it('tests the weather producer without React or a geocoder', async () => {
+  const grok = new Grok(registry);
+  const point = { latitude: -33.87, longitude: 151.21 };
+  grok.registerTap(createAtomValueTap(COORDINATES, { initial: point }));
+  const fetchTemperature = vi.fn(async () => 23);
+  const weather = createCoordinateWeatherTap(fetchTemperature);
+  grok.registerTap(weather);
+  const result = grok.query(TEMPERATURE, grok.mainContext);
+  const unsubscribe = result.subscribe(() => {});
+  try {
+    grok.flush();
+    await waitFor(() => expect(result.get()).toBe(23));
+    expect(fetchTemperature).toHaveBeenCalledWith(point, expect.any(AbortSignal));
+  } finally {
+    unsubscribe();
+    grok.unregisterTap(weather);
+  }
+});
+```
+
+These excerpts come from the
+[executable introduction tests](https://github.com/owebeeone/grip-react-demo/blob/main/tests/readmeWeather.test.tsx),
+which include the imports, cleanup, and assertions. They also verify independent
+column edits, switching in both directions without remounting, and the geocoder
+being resolved through the weather producer's requirement.
+
+This is a repeatable test boundary: supply the declared inputs instead of
+assembling the rest of the application. Business rules and provider-selection
+policies still need tests of their own.
+
+## Test the component with supplied values
+
+The display can be tested without any weather or geocoding implementation.
+Supply its contracts with atoms, render it, and change a value:
+
+<!-- demo-test: tests/readmeWeather.test.tsx#display -->
+```tsx
+it('tests the display with supplied data, without weather or geocoding producers', () => {
+  const grok = new Grok(registry);
+  grok.registerTap(createAtomValueTap(LOCATION, { initial: 'Sydney', handleGrip: LOCATION_TAP }));
+  const temperature = createAtomValueTap(TEMPERATURE, { initial: 25 });
+  grok.registerTap(temperature);
+  const view = render(<GripProvider grok={grok}><WeatherColumn /></GripProvider>);
+  // <output> has the implicit ARIA role "status".
+  expect(view.getByRole('status').textContent).toBe('25 °C');
+  act(() => { temperature.set(26); grok.flush(); });
+  expect(view.getByRole('status').textContent).toBe('26 °C');
+});
+```
+
+The same component runs against supplied values here and either weather source
+in the application. The
+[executable tests](https://github.com/owebeeone/grip-react-demo/blob/main/tests/readmeWeather.test.tsx)
+also check independent column edits, producer switching without remounting, and
+the geocoder being resolved when temperature is requested.
+
+Producers have the same isolation boundary: supply their inputs and test them
+without mounting React. A [complete producer test](#test-the-producer-without-react)
+is included below.
+
+## Run the development examples
+
+The development demo uses sibling source packages. From a new directory, clone
+and build them in dependency order. Use Node.js 24 and pnpm, as used for local
+verification:
+
+```sh
+git clone https://github.com/owebeeone/grip-core.git
+git clone https://github.com/owebeeone/grip-react.git
+git clone https://github.com/owebeeone/grip-react-demo.git
+
+cd grip-core
+pnpm install
+pnpm build
+cd ../grip-react
+pnpm install
+pnpm build
+cd ../grip-react-demo
+pnpm install
+pnpm dev
+```
+
+Open **`/readme-weather.html`** for the weather introduction or
+**`/readme-counter.html`** for the minimal counter, on the address Vite prints. Change either
+location, then switch from **Mock** to **Coordinates (fixture)**. There are no
+external requests in this introduction. The
+[entry point](https://github.com/owebeeone/grip-react-demo/blob/main/src/readme/main.tsx)
+creates the runtime once and mounts the app; the
+[HTML entry](https://github.com/owebeeone/grip-react-demo/blob/main/readme-weather.html)
+provides the root element.
+
+The main demo at `/` also includes live weather, coin streams, a calculator,
+and editable text with derived values. **View Code** shows the actual source for
+the active tab. **Show Graph** keeps the demo visible beside the live graph:
+grey lines show child-to-parent context links; green lines show resolved
+provider-to-consumer data connections.
+
+From the demo checkout:
+
+```sh
+pnpm test
+pnpm build
+node scripts/check-readme.mjs
+```
+
+The last command checks that this README's example excerpts match the tested
+source files in the sibling demo checkout. Rebuild a library before reinstalling
+its local file dependency into the demo when changing library code.
+
+For an existing React application, `GripProvider` is the entry boundary. Define
+your grips, create one runtime outside component rendering, register providers,
+and wrap the feature that consumes them. The source example above includes all
+of those pieces. GRIP React re-exports core APIs; importing its React integration
+does not require a separate core import in application code.
+
+## The concepts behind the example
+
+| Name | Role |
+| --- | --- |
+| **Grip** | A typed identifier for a value or capability; it is not a state container. |
+| **Tap** | A producer that provides one or more grips and declares its input requirements. |
+| **Drip** | The live, subscribable result of a grip request. React hooks manage the subscription. |
+| **Context** | The surroundings used to resolve a request and its parameters. Contexts form a graph and can inherit providers. |
+| **Grok** | The runtime that manages the graph and resolves connections. |
+| **Destination parameter** | An input resolved from the consumer's context, so one producer can serve differently configured consumers. |
+| **Home parameter** | An input resolved from the producer's home context, shared according to that placement. |
+
+`@owebeeone/grip-core` implements the framework-independent mechanism. This
+package adds React providers, scopes, hooks, input bindings, and graph tools.
+React renders the interface; GRIP maintains the data connections.
+
+## A small mechanism that replaces application plumbing
+
+GRIP adds a focused dataflow mechanism; React remains the rendering engine.
+The core's [graph](https://github.com/owebeeone/grip-core/blob/main/src/core/graph.ts),
+[resolver](https://github.com/owebeeone/grip-core/blob/main/src/core/tap_resolver.ts),
+and [engine orchestration](https://github.com/owebeeone/grip-core/blob/main/src/core/grok.ts)
+total about **2,400 source lines**, including comments and blank lines. The
+resolver itself is under 800 lines. These counts describe those three pieces,
+not the full package: tap implementations, matching, and React integration add
+their own supporting code.
+
+The development cost is the work GRIP replaces. You reuse connection management,
+parameter resolution, and reactive updates instead of implementing them in each
+feature. Where those relationships would otherwise need custom imperative
+coordination, adopting GRIP can mean less code and less development work—not
+another system to build alongside the application.
+
+## Why the combination matters
+
+GRIP combines established principles—separation of concerns, typed contracts,
+and reactive dependency resolution—so their benefits reinforce each other.
+The same boundary that makes a component supplier-agnostic also makes it easier
+to test, instrument, inspect, and compose with independent producers.
+
+Those boundaries also provide a foundation for application features such as
+undo and redo around state changes. Graph inspection shows the active producers,
+consumers, and connections, making the dataflow visible while the application runs.
+
+These capabilities share one mechanism. Application code declares requirements
+and behavior; it doesn't have to rebuild the connection machinery for each
+feature. In the weather example, independent instances, provider switching, and
+an additional dependency chain all work without changing the consuming column.
+
+That is the development-cost argument: additional capability can require less
+application code, not more. Reusing the machinery removes wiring that would
+otherwise have to be written, tested, debugged, and maintained as the application
+evolves. The return comes from work that no longer needs doing.
+
+**Beware horizon blindness: unfamiliar abstractions are easy to count; familiar
+plumbing is easy to overlook.**
+
+Dismissing GRIP because it introduces new concepts leaves half the comparison
+undone. Count the connection code, synchronization, lifecycle handling, and test
+setup it replaces. If you conclude that GRIP costs more, identify the additional
+work for equivalent behavior. "It's different" doesn't establish that, and "the
+application is simple" doesn't make separation and testability worthless.
+
+## Add one feature to an existing application
+
+Start with a panel or operation that has a clear input/output contract. Provide
+its initial inputs at a `GripProvider` or `GripScope` boundary, then let the
+feature read grips and invoke supplied capabilities.
+
+Existing state and services can remain where they are. An adapter tap can read
+an existing service and publish the corresponding grips. That adapter owns the
+subscription and cleanup; consumers do not need to know the service's API.
+An application does not need to migrate all its state at once.
+
+## Application state through useGrip
+
+GRIP can own all application and UI state: local values, derived data,
+asynchronous requests, and streams. Consumer components can obtain values and
+actions through `useGrip` alone, without directly using React's own hooks.
+Event handlers invoke the supplied actions; producers own the state changes,
+computation, and external work.
+
+Removing that hook coordination from consumers eliminates a whole class of
+potential bugs in those components:
+
+- Missing dependencies that leave effect callbacks or memoized results using
+  outdated inputs.
+- Unstable effect dependencies that repeatedly restart work or trigger update
+  loops.
+- Derived values copied into local state that fall out of sync, with chains of
+  effects producing stale intermediate renders.
+- Subscription setup and cleanup that each consuming component must implement
+  and can get wrong.
+
+GRIP manages subscriptions and resolves declared dependencies; producers own
+their computation and external work. Consumers no longer implement those
+coordination mechanisms themselves. React's own guidance on
+[dependency arrays](https://react.dev/reference/eslint-plugin-react-hooks/lints/exhaustive-deps)
+and [unnecessary effects](https://react.dev/learn/you-might-not-need-an-effect)
+describes the corresponding failure patterns.
+
+The form-binding and context hooks are conveniences for editing and composition.
+For consuming application state, `useGrip` can be the only hook a component needs.
+
+Larger applications already enforce this discipline through automated tests and
+lint checks that reject prohibited React hooks in application code. The same
+checks apply to human-written and LLM-generated changes, catching unwanted hook
+imports and calls instead of relying on the author to remember the rule. This
+keeps state and coordination in GRIP, preserving its testability, inspectability,
+and supplier independence as the application grows. Consumers use GRIP hooks;
+the React subscription integration stays inside GRIP React.
+
+## React API
+
+All hooks below require an enclosing `GripProvider`.
+
+| API | Use |
+| --- | --- |
+| `GripProvider` | Supply the runtime and an optional context; defaults to `grok.mainContext`. |
+| `GripScope` | Provide an initialized, keyed context to a subtree. |
+| `useGrip(grip, ctx?)` | Read a value and subscribe; the result can be `undefined` before a value is available. |
+| `useGripSetter(handleGrip, ctx?)` / `useGripUpdater(handleGrip, ctx?)` | Invoke an atom handle's setter or updater. |
+| `useGripState(valueGrip, handleGrip, ctx?)` | Read a value and its setter as a tuple. |
+| `useSelectGrip`, `useCheckboxGrip`, `useRadioGrip` | Bind form controls to values and their mutators. |
+| `useTextGrip`, `useNumberGrip` | Direct text/number bindings with parsing and formatting options. |
+| `GripInput`, `GripTextarea`, `useBufferedTextGrip` | Keep a focused edit buffer while publishing changes; useful when normalized values would otherwise disturb editing. |
+| `useTap(factory, options?)` | Register a tap in an effect and unregister it on cleanup; explicit dependencies control recreation. |
+| `useAtomValueTap(grip, options?)` | Create and register a component-owned atom; specify a handle grip if descendants need its mutator. |
+| `useChildContext`, `useKeyedChildContext`, `useKeyedMatchingContext` | Lower-level context creation when the application owns the boundary. |
+| `useLocalContext` | Keep the first context for the component lifetime, including when the enclosing parent changes. |
+| `useRuntime` | Read the enclosing runtime and context for composition or integration code. |
+| `GripGraphVisualizer`, `GraphDumpButton` | Inspect live connections and export graph snapshots. |
+
+### Editing without losing the local draft
+
+`GripInput` and `GripTextarea` use the buffered binding. Valid edits publish on
+change by default; `update="blur"` defers publication. While focused, incoming
+values do not replace the local draft. On blur, the draft is committed and the
+field resumes displaying the stored value. A parser returning `undefined` does
+not publish that draft, so unfinished numeric input can remain editable.
+
+See the demo's
+[counter](https://github.com/owebeeone/grip-react-demo/blob/main/src/ClockCounterPanel.tsx)
+and [description editor](https://github.com/owebeeone/grip-react-demo/blob/main/src/DescriptionEditor.tsx)
+for examples of editing, normalization, and computed outputs.
+
+### Scope lifetime
+
+An equal `scopeKey` under the same parent reuses the live context. The same key
+under different parents identifies independent scopes. Use mutators to change
+values; `init` is not a prop-synchronization callback.
+
+Unmounting a scope does not explicitly retire its context. An external owner
+can retain it, while an unreferenced context group may be garbage-collected and
+initialized again on later creation. This is live-context reuse, not persistence.
+The [scope contract and lifecycle notes](dev-docs/GripScope.md) cover these rules.
+
+## Core producers and further reading
+
+| Factory | Use |
+| --- | --- |
+| `createAtomValueTap` | Store a value and optionally expose its mutator. |
+| `createFunctionTap` | Derive outputs from declared home or destination parameters; optional internal state is also supported. |
+| `createAsyncValueTap` / `createAsyncMultiTap` | Retrieve asynchronous outputs with request keys, cancellation, caching, and optional request-state/controller grips. |
+| `createAsyncStreamMultiTap` | Produce values from long-lived streams. |
+| `withOneOf` and query bindings | Declare conditions that select providers. |
+
+The [core README](https://github.com/owebeeone/grip-core#readme) and
+[core source](https://github.com/owebeeone/grip-core/tree/main/src/core)
+cover resolution, matching, async request behavior, and streams. Local design
+specifications in this repository also record historical proposals; do not treat
+an unimplemented proposal as part of the exported API.
+
+See the [scope lifecycle notes](dev-docs/GripScope.md) for initialization and
+ownership details when building reusable subtree boundaries.

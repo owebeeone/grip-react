@@ -1,7 +1,8 @@
 # GRIP React README improvement plan
 
-Status: Full README rewrite remains planned. GripScope and the scoped weather
-and coin demo are implemented; the existing scope example has been updated.
+Status: README rewrite implemented and locally verified. The introduction uses
+an executable, deterministic weather example in the demo's `src/readme/`, with
+the full live Weather tab linked separately. Changes are not yet published.
 
 ## Purpose and audience
 
@@ -73,24 +74,25 @@ network service or API account necessary to understand the mechanism.
 
 ## Proposed README order
 
-1. **What changes for a React component** — a short problem statement and the
-   unchanged weather display. Avoid architecture terminology until needed.
-2. **The same display in different contexts** — the two locations and their
-   composition, with a runnable demo link.
-3. **Providers declare their own inputs** — mock-to-live replacement and the
-   geocoding chain. Introduce destination parameters through that behavior.
-4. **Test each part independently** — a display test supplied with fake data,
-   and a producer test supplied with controlled inputs.
-5. **Run the example** — installation, complete runtime setup, provider
-   registration, mounting, and the command that starts the example.
-6. **The concepts behind it** — concise definitions of Grip, Tap, Drip,
-   context, and Grok, anchored to code already shown.
-7. **Add GRIP to an existing application** — integrate one feature or panel
-   at a clear boundary; identify any bridge needed for existing state.
-8. **Choose and configure providers** — brief coverage of local, derived,
-   asynchronous, and streaming sources, linking to detailed guides.
+1. **Change the producer. Keep the component.** — a short introduction followed
+   immediately by the weather display, before registry and runtime setup.
+2. **See the producer requirements and watch the connections change** — compact,
+   source-checked declarations directly after the component. Give separate trial
+   steps for the fixture page and the full Weather demo with Show Graph/View Code.
+3. **Verify the composition** — lead with the transitive geocoder test and the
+   switching/independent-column check; keep the isolated display test later.
+4. **Start small and try it** — the growth argument, published installation,
+   and a complete counter as a quick start after the capability is established.
+5. **Complete weather setup** — scopes, contracts, producers, selection rules,
+   and mounting. Introduce destination parameters through these declarations.
+6. **Test each piece and run the examples** — headless producer and isolated
+   display tests, then development-tree commands and the unreleased API caveat.
+7. **Concepts and cost** — concise vocabulary and the shared mechanism's benefits.
+   Keep the horizon-blindness challenge here, after readers have seen the result.
+8. **Add one feature and manage application state** — incremental integration,
+   state ownership, and the consumer hook-coordination errors the model avoids.
 9. **API reference and further reading** — React hooks, lifecycle guidance,
-   core documentation, and optional comparisons.
+   core producers, and detailed documentation.
 
 The setup may live in a linked, complete example to keep the first screen
 short, but all highlighted excerpts must identify their runnable source.
@@ -154,8 +156,46 @@ behavior to fit the explanation.
 
 ## Deliverables
 
-A revised README, a complete runnable example or verified link to one,
-focused example checks, and links to the detailed documentation. This plan
-tracks that work. The targeted scope example is updated; the broader opening,
-provider-chain demonstration, and comparison sections remain to be rewritten.
-This work does not publish a release.
+A revised README, a complete runnable example, focused example checks, and links
+to detailed documentation are implemented. This work does not publish a release.
+
+## Local verification and resulting shape
+
+- The opening identifies GRIP React, retains typed contracts and dynamic
+  connections, and reaches the weather component before setup. The producer
+  declarations, producer switch, graph/source controls, and composition tests
+  establish the payoff before the growth and cost arguments. Display isolation
+  remains documented with the detailed tests.
+- The complete introduction is in `grip-react-demo/src/readme/`. A minimal
+  counter at `/readme-counter.html` follows the weather demonstration in the
+  README as a complete quick start; weather runs at `/readme-weather.html`.
+  Both introductions and the main demo are included in the build. The counter
+  entry includes imports, registry, grips, producer registration, provider, and
+  mounting; a browser check confirms clicking updates the displayed count.
+- Mock weather requires a city; its async replacement requires coordinates.
+  A separate geocoder declares the city requirement. Deterministic local
+  fixtures replace network calls in the introduction; the full Weather demo
+  remains the linked live-service example. One coordinates grip keeps the
+  introductory chain smaller than the full latitude/longitude implementation.
+- Four executable example tests cover isolated UI updates, independent columns
+  across provider changes without remounting, an async producer tested without
+  React, and demand-driven transitive geocoder resolution.
+- Fifteen README code excerpts are checked against those source files and tests,
+  including three compact input/output declarations, both composition tests,
+  the counter, application shell, and entry point.
+  `node scripts/check-readme.mjs` in the demo verifies exact agreement. The
+  example also passes the demo's strict TypeScript and focused lint checks.
+- The categorical library-comparison tables and placeholder code are removed.
+  The React API summary, buffered editing behavior, scope lifetime, and source
+  setup describe the current implementation. Broader hook lifecycle checks in
+  `TODOS.md` are still separate work.
+- Full local check: 17 demo tests pass, all three HTML entries build, and all fifteen
+  excerpts match. New remote source links will be available after publication
+  of these changes; they currently resolve to files in the local checkouts.
+- Follow-up documentation review separates published package installation from
+  development-tree setup, defines Tap before registration, explains the generic
+  order (outputs, home parameters, destination parameters), and documents
+  `<output>`'s implicit status role. Removing the explicit FunctionTap generics
+  was checked with TypeScript and produces four diagnostics, so this edit does
+  not pretend inference is supported or change the core API. The four example
+  tests and strict type check pass again after these documentation edits.
