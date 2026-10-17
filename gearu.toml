@@ -1,0 +1,19 @@
+[project]
+name = "grip-react"
+branch = "main"
+remote = "origin"
+tag_prefix = "v"
+github_repo = "owebeeone/grip-react"
+
+[npm]
+manifest = "package.json"
+
+[release]
+checks = [
+    ["pnpm", "install", "--frozen-lockfile"],
+    ["pnpm", "exec", "vitest", "run", "--silent"],
+    ["pnpm", "build"],
+    ["npm", "pack", "--dry-run"],
+]
+commit_message = "chore(release): grip-react {version}"
+github_notes = "GRIP React {tag} introduces GripScope for independently initialized, keyed React subtrees, buffered input demonstrations, and improved live graph inspection. Graph snapshots no longer retain contexts. Uses published GRIP Core ^0.3.0. See dev-docs/ReleaseNotes.md for details. Publishing this GitHub Release starts npm trusted publishing."

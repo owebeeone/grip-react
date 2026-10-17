@@ -1,6 +1,6 @@
 # GRIP React release notes
 
-## Next release
+## 0.3.0
 
 ### Added
 
@@ -22,16 +22,14 @@
 
 ### GripScope availability
 
-`GripScope` is introduced in this release. It is implemented and exported in
-the source tree; it is not part of the previously published `0.2.0` package.
-Assign the release version to this heading when preparing publication so the
-published release identifies the first version containing the component.
+`GripScope` is introduced in `@owebeeone/grip-react@0.3.0`, with runtime exports
+for both module formats and TypeScript declarations. This release depends on
+the published `@owebeeone/grip-core@^0.3.0` package.
 
 ### Release preparation
 
-- Publish the updated GRIP core and use its published version in the React
-  package dependency instead of the development workspace path.
+- GRIP Core must be published before releasing this package. The React package
+  uses the registry dependency rather than a development workspace path.
 - Verify that the packed React package exports `GripScope` in both module
   formats and its TypeScript declarations, and runs the examples against that
   published core dependency.
-- Replace "Next release" with the assigned version before publication.

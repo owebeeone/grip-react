@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@owebeeone/grip-core':
-        specifier: file:../grip-core
-        version: file:../grip-core
+        specifier: ^0.3.0
+        version: 0.3.0
       react:
         specifier: '>=18'
         version: 19.2.7
@@ -454,11 +454,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@owebeeone/glade-decl@file:../glade-decl-ts':
-    resolution: {directory: ../glade-decl-ts, type: directory}
-
-  '@owebeeone/grip-core@file:../grip-core':
-    resolution: {directory: ../grip-core, type: directory}
+  '@owebeeone/grip-core@0.3.0':
+    resolution: {integrity: sha512-QnMko8gjpt4SmEccQuaIyepe4Xl1X/qsthKiZzlEV8wGchrccgYdUTzHmtaVC84F1u2GSe0asF3SDMYs6epd+A==}
 
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
@@ -1696,11 +1693,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@owebeeone/glade-decl@file:../glade-decl-ts': {}
-
-  '@owebeeone/grip-core@file:../grip-core':
-    dependencies:
-      '@owebeeone/glade-decl': file:../glade-decl-ts
+  '@owebeeone/grip-core@0.3.0': {}
 
   '@pkgjs/parseargs@0.11.0':
     optional: true
