@@ -28,7 +28,6 @@
   - Multi-parent and priority overshadowing.
   - Parameter-driven invalidation with multiple parameterGrips.
   - Override precedence vs tap at equal/ancestor distances.
-  - Disposal: disposeContext clears caches for that ctx; ensure subsequent query re-resolves.
   - Shared drip semantics across multiple consumers in same/different contexts.
 
 ### Demo cleanup
