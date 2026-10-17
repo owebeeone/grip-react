@@ -136,10 +136,6 @@ In both versions, the display imports neither weather implementation nor the
 geocoder. The [composition tests](#verify-the-composition) check that changing
 producers keeps the existing column controls mounted.
 
-> The weather example uses the development tree's unreleased `GripScope` API.
-> [Published installation](#install-the-published-package) and
-> [development setup](#run-the-development-examples) are documented separately.
-
 ## Verify the composition
 
 Requesting temperature is enough to activate the geocoder dependency. This test
@@ -250,8 +246,7 @@ Give the coding agent the complete examples and these implementation rules:
   its updates flow back through the adapter. The adapter owns its external
   subscription and cleanup. Producers own resources such as timers and requests.
 - **Use the actual API and executable examples.** The compact declarations
-  above are excerpts; the full configurations and setup are below. Check the
-  installed version before using an API marked unreleased, including `GripScope`.
+  above are excerpts; the full configurations and setup are below.
 
 Verify [the dependency chain and producer switch](#verify-the-composition),
 [display isolation](#test-the-component-with-supplied-values), and
@@ -277,9 +272,7 @@ React and React DOM are peer dependencies (React 18 or later); core is installed
 as a package dependency. Consumers of a released version do not need sibling
 source repositories.
 
-The `GripScope` introduction in this README targets the development tree. Its
-release version has not yet been assigned; use the setup below to run this new
-example rather than assuming the published package already contains that API.
+See the [release notes](dev-docs/ReleaseNotes.md) for API additions by release.
 
 ## Quick start: one value, one component
 

@@ -86,7 +86,8 @@ network service or API account necessary to understand the mechanism.
 5. **Complete weather setup** — scopes, contracts, producers, selection rules,
    and mounting. Introduce destination parameters through these declarations.
 6. **Test each piece and run the examples** — headless producer and isolated
-   display tests, then development-tree commands and the unreleased API caveat.
+   display tests, then development-tree commands. API availability belongs in
+   the release notes rather than repeated README caveats.
 7. **Concepts and cost** — concise vocabulary and the shared mechanism's benefits.
    Keep the horizon-blindness challenge here, after readers have seen the result.
 8. **Add one feature and manage application state** — incremental integration,
