@@ -45,6 +45,7 @@ type ProviderEdge = {
 
 const CARD_WIDTH = 280;
 const CARD_HEIGHT = 160;
+const MAX_CARD_ITEMS = 100;
 const H_GAP = 40;
 const V_GAP = 60;
 const PADDING = 24;
@@ -270,7 +271,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     if (!vn.live && !showReapedContexts) return null;
     const consumers = vn.consumers
       .filter((c) => showUnresolvedConsumers || c.drip)
-      .slice(0, 6);
+      .slice(0, MAX_CARD_ITEMS);
     const producersCount = vn.producers.size;
     return (
       <div key={vn.id} role="group" aria-label={`Context ${vn.node.id}`} style={{ position: "absolute", left: vn.x, top: vn.y, width: vn.width, height: vn.height, border: "1px solid #ddd", borderRadius: 8, background: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", opacity: cardOpacity }}>
@@ -282,7 +283,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Taps</div>
             <div style={{ maxHeight: 90, overflow: "auto" }}>
-              {producersCount === 0 ? <div style={{ color: "#999" }}>—</div> : Array.from(vn.producers).slice(0, 6).map((rec: any, i: number) => (
+              {producersCount === 0 ? <div style={{ color: "#999" }}>—</div> : Array.from(vn.producers).slice(0, MAX_CARD_ITEMS).map((rec: any, i: number) => (
                 <div key={i} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec?.tap?.constructor?.name ?? "Tap"}</div>
               ))}
             </div>
