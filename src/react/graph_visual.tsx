@@ -12,6 +12,7 @@ export type GripGraphVisualizerProps = {
   pause?: boolean;
   // If true, scales the graph down to fit the pane; if false, uses scrollbars when needed
   fitToPane?: boolean;
+  direction?: 'vertical' | 'horizontal';
   className?: string;
   style?: React.CSSProperties;
   // A simple counter. Increment to force a refresh.
@@ -104,14 +105,11 @@ function snapshotConsumers(node: GripContextNode): Array<{ grip: Grip<any>; drip
 
 function buildVisual(
   grok: Grok,
-  showResolvedProviders: boolean,
-  showUnresolvedConsumers: boolean,
-  viewportWidth: number,
-  viewportHeight: number,
-  fitToPane: boolean,
+  showReapedContexts: boolean,
+  direction: 'vertical' | 'horizontal',
   keys: GraphDumpKeyRegistry
 ): { nodes: VisualNode[]; parentEdges: ParentEdge[]; providerEdges: ProviderEdge[]; canvas: { width: number; height: number } } {
-  const graph = grok.getGraph();
+  const graph = new Map([...grok.getGraph()].filter(([, node]) => showReapedContexts || !!node.get_context()));
   const layerMap = computeLayers(graph);
   const layers: Map<number, VisualNode[]> = new Map();
   let maxLayer = 0;
@@ -138,15 +136,17 @@ function buildVisual(
     layers.get(l)!.push(vn);
   }
 
-  // Compute scaling to fill viewport
+  // Natural geometry; the component scales the complete canvas to fit.
   const layerCount = maxLayer + 1;
   const maxCols = Math.max(...Array.from(layers.values()).map((arr) => arr.length), 1);
-  const requiredWidth = PADDING * 2 + maxCols * CARD_WIDTH + (maxCols - 1) * H_GAP;
-  const requiredHeight = PADDING * 2 + layerCount * CARD_HEIGHT + (layerCount - 1) * V_GAP;
-  const fitW = viewportWidth / Math.max(1, requiredWidth);
-  const fitH = viewportHeight / Math.max(1, requiredHeight);
-  const fit = Math.min(fitW, fitH);
-  const scale = fitToPane ? Math.min(1, isFinite(fit) && fit > 0 ? fit : 1) : 1; // shrink only when asked
+  const horizontal = direction === 'horizontal';
+  const columns = horizontal ? layerCount : maxCols;
+  const rows = horizontal ? maxCols : layerCount;
+  const requiredWidth = PADDING * 2 + columns * CARD_WIDTH + (columns - 1) * H_GAP;
+  const requiredHeight = PADDING * 2 + rows * CARD_HEIGHT + (rows - 1) * V_GAP;
+  // Keep cards, text, and edges at their natural size. The whole canvas is
+  // transformed together by the viewer, so fit cannot shrink only card boxes.
+  const scale = 1;
   const cardW = CARD_WIDTH * scale;
   const cardH = CARD_HEIGHT * scale;
   const gapX = H_GAP * scale;
@@ -155,16 +155,16 @@ function buildVisual(
   const padY = PADDING * scale;
   const scaledRequiredWidth = requiredWidth * scale;
   const scaledRequiredHeight = requiredHeight * scale;
-  const canvasWidth = fitToPane ? viewportWidth : Math.max(viewportWidth, scaledRequiredWidth);
-  const canvasHeight = fitToPane ? viewportHeight : Math.max(viewportHeight, scaledRequiredHeight);
-  const offsetX = Math.max(0, (viewportWidth - scaledRequiredWidth) / 2);
-  const offsetY = Math.max(0, (viewportHeight - scaledRequiredHeight) / 2);
+  const canvasWidth = scaledRequiredWidth;
+  const canvasHeight = scaledRequiredHeight;
+  const offsetX = 0;
+  const offsetY = 0;
   for (const [l, arr] of layers) {
     arr.sort((a, b) => a.id.localeCompare(b.id));
     const n = arr.length;
     for (let i = 0; i < n; i++) {
-      const x = offsetX + padX + i * (cardW + gapX);
-      const y = offsetY + padY + l * (cardH + gapY);
+      const x = offsetX + padX + (horizontal ? l : (maxCols - n) / 2 + i) * (cardW + gapX);
+      const y = offsetY + padY + (horizontal ? (maxCols - n) / 2 + i : l) * (cardH + gapY);
       arr[i].x = x;
       arr[i].y = y;
       arr[i].width = cardW;
@@ -201,12 +201,17 @@ function buildVisual(
 }
 
 export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
-  const { grok, refreshMs = 500, showDestinationParams = false, showResolvedProviders = true, showUnresolvedConsumers = true, showReapedContexts = true, pause = false, fitToPane = false, className, style, refreshTrigger = 0, keys = new GraphDumpKeyRegistry() } = props;
+  const { grok, refreshMs = 500, showDestinationParams = false, showResolvedProviders = true, showUnresolvedConsumers = true, showReapedContexts = true, pause = false, fitToPane = false, direction = 'vertical', className, style, refreshTrigger = 0 } = props;
+  const ownKeys = useMemo(() => new GraphDumpKeyRegistry(), []);
+  const keys = props.keys ?? ownKeys;
 
   const [nodes, setNodes] = useState<VisualNode[]>([]);
   const [parentEdges, setParentEdges] = useState<ParentEdge[]>([]);
   const [providerEdges, setProviderEdges] = useState<ProviderEdge[]>([]);
   const [canvas, setCanvas] = useState<{ width: number; height: number }>({ width: 800, height: 600 });
+  const [viewport, setViewport] = useState({ w: 800, h: 600 });
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const fittedScale = fitToPane ? Math.max(.05, Math.min(1, viewport.w / canvas.width, viewport.h / canvas.height)) : 1;
 
   useEffect(() => {
     let cancelled = false;
@@ -220,25 +225,29 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     }
     function tick() {
       const { w, h } = measureViewport();
-      const { nodes, parentEdges, providerEdges, canvas } = buildVisual(grok, showResolvedProviders, showUnresolvedConsumers, w, h, fitToPane, keys);
+      const { nodes, parentEdges, providerEdges, canvas } = buildVisual(grok, showReapedContexts, direction, keys);
       if (cancelled) return;
       setNodes(nodes);
       setParentEdges(parentEdges);
       setProviderEdges(providerEdges);
       setCanvas(canvas);
-      if (!cancelled && !pause) setTimeout(tick, refreshMs);
+      setViewport({ w, h });
     }
     tick();
-    return () => { cancelled = true; };
-  }, [grok, refreshMs, pause, showResolvedProviders, showUnresolvedConsumers, fitToPane, refreshTrigger]);
+    const timer = pause ? undefined : setInterval(tick, Math.max(100, refreshMs));
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(tick) : undefined;
+    if (containerRef.current) observer?.observe(containerRef.current);
+    return () => { cancelled = true; clearInterval(timer); observer?.disconnect(); };
+  }, [grok, refreshMs, pause, showResolvedProviders, showUnresolvedConsumers, showReapedContexts, fitToPane, direction, refreshTrigger, keys]);
 
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const containerStyle: React.CSSProperties = useMemo(() => ({
     position: "relative",
     width: "100%",
     height: "100%",
     overflow: "auto",
     background: "#fafafa",
+    color: "#213547",
+    textAlign: "left",
     ...style,
   }), [style]);
 
@@ -260,13 +269,13 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
       .slice(0, 6);
     const producersCount = vn.producers.size;
     return (
-      <div key={vn.id} style={{ position: "absolute", left: vn.x, top: vn.y, width: vn.width, height: vn.height, border: "1px solid #ddd", borderRadius: 8, background: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", opacity: cardOpacity }}>
+      <div key={vn.id} role="group" aria-label={`Context ${vn.node.id}`} style={{ position: "absolute", left: vn.x, top: vn.y, width: vn.width, height: vn.height, border: "1px solid #ddd", borderRadius: 8, background: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", opacity: cardOpacity }}>
         <div style={{ background: headerBg, color: "#fff", padding: "6px 10px", borderTopLeftRadius: 8, borderTopRightRadius: 8, fontSize: 13, display: "flex", justifyContent: "space-between" }}>
           <div title={vn.display_id} style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: vn.width - 90 }}>{vn.display_id}{hasIssues ? " · Drip unsubscribe failed" : ""}</div>
           <div style={{ fontSize: 12, opacity: 0.9 }}>{producersCount} taps · {vn.consumers.length} drips</div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, padding: 10, fontSize: 12 }}>
-          <div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 8, padding: 10, fontSize: 12 }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Taps</div>
             <div style={{ maxHeight: 90, overflow: "auto" }}>
               {producersCount === 0 ? <div style={{ color: "#999" }}>—</div> : Array.from(vn.producers).slice(0, 6).map((rec: any, i: number) => (
@@ -274,13 +283,13 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
               ))}
             </div>
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Drips</div>
             <div style={{ maxHeight: 90, overflow: "auto" }}>
               {consumers.length === 0 ? <div style={{ color: "#999" }}>—</div> : consumers.map((c, i) => (
                 <div key={i} title={(c.grip as any).key} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>{(c.grip as any).key}</span>
-                  <span style={{ color: "#555", maxWidth: 110, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{String(c.value)}</span>
+                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{(c.grip as any).key}</span>
+                  <span title={String(c.value)} style={{ flex: 1, minWidth: 0, color: "#555", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{String(c.value)}</span>
                 </div>
               ))}
             </div>
@@ -296,30 +305,37 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     const from = findNode(e.from);
     const to = findNode(e.to);
     if (!from || !to) return null;
-    const x1 = from.x + from.width / 2;
-    const y1 = from.y;
-    const x2 = to.x + to.width / 2;
-    const y2 = to.y + to.height;
-    return <line key={e.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#bbb" strokeWidth={1} markerEnd="url(#arrow-grey)" />;
+    const horizontal = direction === 'horizontal';
+    const x1 = from.x + (horizontal ? 0 : from.width / 2);
+    const y1 = from.y + (horizontal ? from.height / 2 : 0);
+    const x2 = to.x + (horizontal ? to.width : to.width / 2);
+    const y2 = to.y + (horizontal ? to.height / 2 : to.height);
+    const curve = horizontal ? `C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}` : `C ${x1} ${(y1 + y2) / 2}, ${x2} ${(y1 + y2) / 2}, ${x2} ${y2}`;
+    return <path key={e.id} d={`M ${x1} ${y1} ${curve}`} stroke="#aab5c2" fill="none" strokeWidth={1} markerEnd="url(#arrow-grey)" />;
   });
 
-  const providerLines = providerEdges.map((e) => {
+  const providerLines = showResolvedProviders ? providerEdges.map((e) => {
     const from = findNode(e.from);
     const to = findNode(e.to);
     if (!from || !to) return null;
-    const x1 = from.x + from.width / 2;
-    const y1 = from.y + from.height / 2;
-    const x2 = to.x + to.width / 2;
-    const y2 = to.y + to.height / 2;
-    // Straight line; could be improved to spline
+    const horizontal = direction === 'horizontal';
+    const x1 = from.x + (horizontal ? from.width : from.width / 2);
+    const y1 = from.y + (horizontal ? from.height / 2 : from.height);
+    const x2 = to.x + (horizontal ? 0 : to.width / 2);
+    const y2 = to.y + (horizontal ? to.height / 2 : 0);
+    const curve = horizontal ? `C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}` : `C ${x1} ${(y1 + y2) / 2}, ${x2} ${(y1 + y2) / 2}, ${x2} ${y2}`;
     const title = e.grips.map((g) => `${(g.grip as any).key}: ${String(g.value)}`).join("\n");
-    return <line key={e.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#2e7d32" strokeWidth={2} opacity={0.85} markerEnd="url(#arrow-green)"><title>{title}</title></line>;
-  });
+    return <path key={e.id} data-edge-kind="provider" d={`M ${x1} ${y1} ${curve}`} stroke="#2e7d32" fill="none" strokeWidth={2} opacity={0.85} markerEnd="url(#arrow-green)"><title>{title}</title></path>;
+  }) : [];
 
   return (
     <div ref={containerRef} className={className} style={containerStyle}>
       {/* Content area sized to graph; centered */}
-      <div style={{ position: "relative", width: canvas.width, height: canvas.height, margin: "0 auto" }}>
+      <div style={{ position: "relative", width: Math.max(viewport.w, canvas.width * fittedScale), height: Math.max(viewport.h, canvas.height * fittedScale) }}>
+      <div data-testid="graph-transform" style={{ position: "absolute", width: canvas.width, height: canvas.height,
+        left: Math.max(0, (viewport.w - canvas.width * fittedScale) / 2),
+        top: Math.max(0, (viewport.h - canvas.height * fittedScale) / 2),
+        transform: `scale(${fittedScale})`, transformOrigin: 'top left' }}>
         {/* SVG edges */}
         <svg width={canvas.width} height={canvas.height} style={svgStyle}>
         <defs>
@@ -335,6 +351,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
         </svg>
         {/* Nodes */}
         {nodes.map(nodeCard)}
+      </div>
       </div>
     </div>
   );
