@@ -862,3 +862,11 @@ an unimplemented proposal as part of the exported API.
 
 See the [scope lifecycle notes](dev-docs/GripScope.md) for initialization and
 ownership details when building reusable subtree boundaries.
+
+### Live graph value changes
+
+The graph viewer briefly highlights consumer rows when their displayed values
+change, using white text on blue with a gold edge. It holds briefly, then fades away
+over 1.5 seconds. Unchanged refreshes and the
+initial snapshot do not flash. Row identity and graph layout are preserved.
+With reduced motion enabled, the highlight stays static briefly and then clears.

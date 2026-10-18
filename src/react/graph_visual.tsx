@@ -1,3 +1,4 @@
+import { GraphValueRow } from "./GraphValueRow";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Grok, GripContextNode, Grip } from "@owebeeone/grip-core";
 import { GraphDumpKeyRegistry } from "@owebeeone/grip-core";
@@ -66,11 +67,11 @@ function computeLayers(graph: ReadonlyMap<string, GripContextNode>): Map<string,
   }
   const roots: string[] = [];
   for (const [id, parents] of parentsById) {
-    if (parents.length === 0) roots.push(id);
+    if (parents.length === 0) { roots.push(id); }
   }
   const layer = new Map<string, number>();
   const queue: string[] = [...roots];
-  for (const r of roots) layer.set(r, 0);
+  for (const r of roots) { layer.set(r, 0); }
   while (queue.length > 0) {
     const cur = queue.shift()!;
     const curLayer = layer.get(cur) ?? 0;
@@ -81,19 +82,19 @@ function computeLayers(graph: ReadonlyMap<string, GripContextNode>): Map<string,
         const prev = layer.get(id);
         if (prev == null || next > prev) {
           layer.set(id, next);
-          if (!queue.includes(id)) queue.push(id);
+          if (!queue.includes(id)) { queue.push(id); }
         }
       }
     }
   }
   // orphaned nodes (shouldn't happen): put at layer 0
-  for (const id of graph.keys()) if (!layer.has(id)) layer.set(id, 0);
+  for (const id of graph.keys()) { if (!layer.has(id)) { layer.set(id, 0); } }
   return layer;
 }
 
 function uniqueProducerRecords(node: GripContextNode): Set<any> {
   const recs = new Set<any>();
-  for (const [, rec] of node.get_producers()) recs.add(rec);
+  for (const [, rec] of node.get_producers()) { recs.add(rec); }
   return recs;
 }
 
@@ -138,7 +139,7 @@ function buildVisual(
       producers: Array.from(uniqueProducerRecords(node)).map(rec => rec.tap?.constructor?.name ?? 'Tap'),
       consumers: snapshotConsumers(node),
     };
-    if (!layers.has(l)) layers.set(l, []);
+    if (!layers.has(l)) { layers.set(l, []); }
     layers.get(l)!.push(vn);
   }
 
@@ -193,7 +194,7 @@ function buildVisual(
     for (const rec of uniqueProducerRecords(graph.get(vn.nodeId)!)) {
       for (const [destNode, destination] of rec.getDestinations()) {
         const destCtx = destNode.get_context();
-        if (!destCtx) continue;
+        if (!destCtx) { continue; }
         const grips = Array.from(destination.getGrips() as ReadonlySet<Grip<any>>).map((g: Grip<any>) => {
           const val = destCtx._getContextNode().getLiveDripForGrip(g as any)?.get();
           return { gripKey: g.key, value: String(val) };
@@ -232,7 +233,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     function tick() {
       const { w, h } = measureViewport();
       const { nodes, parentEdges, providerEdges, canvas } = buildVisual(grok, showReapedContexts, direction, keys);
-      if (cancelled) return;
+      if (cancelled) { return; }
       setNodes(nodes);
       setParentEdges(parentEdges);
       setProviderEdges(providerEdges);
@@ -242,7 +243,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     tick();
     const timer = pause ? undefined : setInterval(tick, Math.max(100, refreshMs));
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(tick) : undefined;
-    if (containerRef.current) observer?.observe(containerRef.current);
+    if (containerRef.current) { observer?.observe(containerRef.current); }
     return () => { cancelled = true; clearInterval(timer); observer?.disconnect(); };
   }, [grok, refreshMs, pause, showResolvedProviders, showUnresolvedConsumers, showReapedContexts, fitToPane, direction, refreshTrigger, keys]);
 
@@ -271,7 +272,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
     const hasIssues = vn.hasIssues;
     const headerBg = hasIssues ? "#c62828" : (vn.live ? "#1e88e5" : "#9e9e9e");
     const cardOpacity = !vn.live && showReapedContexts ? 0.6 : vn.live ? 1 : showReapedContexts ? 0.6 : 0; // hide reaped if not showing
-    if (!vn.live && !showReapedContexts) return null;
+    if (!vn.live && !showReapedContexts) { return null; }
     const consumers = vn.consumers
       .filter((c) => showUnresolvedConsumers || c.live)
       .slice(0, MAX_CARD_ITEMS);
@@ -294,11 +295,11 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Drips</div>
             <div style={{ maxHeight: 90, overflow: "auto" }}>
-              {consumers.length === 0 ? <div style={{ color: "#999" }}>—</div> : consumers.map((c, i) => (
-                <div key={i} title={c.gripKey} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              {consumers.length === 0 ? <div style={{ color: "#999" }}>—</div> : consumers.map((c) => (
+                <GraphValueRow key={c.gripKey} value={c.value} baseline={grok} title={c.gripKey} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.gripKey}</span>
-                  <span title={String(c.value)} style={{ flex: 1, minWidth: 0, color: "#555", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{String(c.value)}</span>
-                </div>
+                  <span title={String(c.value)} style={{ flex: 1, minWidth: 0, color: "inherit", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{String(c.value)}</span>
+                </GraphValueRow>
               ))}
             </div>
           </div>
@@ -312,7 +313,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
   const parentLines = parentEdges.map((e) => {
     const from = findNode(e.from);
     const to = findNode(e.to);
-    if (!from || !to) return null;
+    if (!from || !to) { return null; }
     const horizontal = direction === 'horizontal';
     const x1 = from.x + (horizontal ? 0 : from.width / 2);
     const y1 = from.y + (horizontal ? from.height / 2 : 0);
@@ -325,7 +326,7 @@ export function GripGraphVisualizer(props: GripGraphVisualizerProps) {
   const providerLines = showResolvedProviders ? providerEdges.map((e) => {
     const from = findNode(e.from);
     const to = findNode(e.to);
-    if (!from || !to) return null;
+    if (!from || !to) { return null; }
     const horizontal = direction === 'horizontal';
     const x1 = from.x + (horizontal ? from.width : from.width / 2);
     const y1 = from.y + (horizontal ? from.height / 2 : from.height);
